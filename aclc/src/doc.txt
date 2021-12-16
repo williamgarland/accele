@@ -1,0 +1,629 @@
+----- Importing -----
+import opengm.graphics      // relative local import
+import sys                  // relative global import
+import "../a/b.accele"      // absolute import
+
+You can reference symbols from other modules by using the import statement.
+When you import a module, its symbol table gets loaded into the current compiler instance (if it isn't already) and becomes available to the current module.
+Imported symbols are not visible to modules which import the current module.
+For example, if module "b" imports "a", and "c" imports "b", the symbols in "a" will not be visible to "c" unless "c" imports "a" directly.
+You can reference a symbol from another module by using its full qualifier.
+
+Example:
+
+module a:
+fun f(x) = 2 * x
+
+module b:
+import a
+fun main() {
+    print(a.f(20))  // Full qualifier
+}
+
+You can import particular symbols from a module by using the "from" keyword.
+
+Example:
+
+module a:
+fun f(x) = 2 * x
+var z = 32
+
+module b:
+import { f, z } from a
+
+fun main() {
+    print(f(z))
+}
+
+You can only import top-level (i.e. global) symbols using the "from" construction.
+If a symbol from the current module has the same name as a symbol imported using a "from" construction,
+or if it has the same name as a symbol imported from another "from" construction, then you must use the full qualifier to refer to it.
+The compiler will warn you if symbols imported using a "from" construction are ambiguous.
+
+If you want to import only one symbol using a "from" construction, then you don't need to write the curly braces:
+
+import z from a // Single import
+import {z} from a // Single import with curly braces
+import {f, z} from a // Multi-import
+
+If an imported symbol matches more than one symbol in the imported module, then you must specify it using its full type qualifier:
+
+module a:
+fun f(x: Int) = 2 * x
+var f = 3.14
+
+module b:
+import f: Int -> Int from a // This will import the function f(x)
+
+You can change the name of the import by specifying an import alias.
+
+Example:
+
+module a:
+var x = 3.14
+
+module b:
+import a as aliasedName
+
+fun main() {
+    print(aliasedName.x)
+}
+
+Once you specify an import alias, you can no longer refer to the import by its original name.
+If two or more imports have the same name, you must specify import aliases to differentiate them.
+For example, if you attempt to import two modules that are both named "a", you must give an import alias to at least one of them (you don't have to do it for both).
+Import aliases cannot be used in "from" constructions.
+
+You must write import statements at the top level of a module.
+
+Grammar:
+ImportStatement = StandardImport | FromImport;
+StandardImport = "import" ImportTarget ("as" ID);
+FromImport = "import" (StaticImport | "{" StaticImport ("," StaticImport)*) "from" ImportTarget;
+ImportTarget = FullyQualifiedID | StringLiteral;
+StaticImport = ID (":" Type)?;
+
+----- Variables -----
+
+Variables are a way to store data in a location in memory for reuse.
+Variables can be declared in several places: globally, locally, per instance, or per type.
+
+Global Variables:
+Global variables are variables declared in the top-level scope of a module.
+They can be defined at their declaration location or their definition can be deferred to within a local scope.
+In terms of implementation they are equivalent to global variables in C/C++, except all Accele global variables are restricted by their module namespace.
+Global variables are declared using either the "var" or "const" keyword followed by an identifier (at minimum).
+You also have the option of specifying declaration modifiers (such as visibility or atomicity), explicitly-declared types, and values.
+
+Example:
+
+module a:
+var x
+internal const y = 10
+const pi: Double = 3.14
+atomic var z: Int
+
+If you declare a global constant (i.e. with the "const" keyword), you must specify a value at the declaration site.
+Once a value for a constant has been defined, it cannot be modified.
+
+Available Modifiers:
+internal - Ensures that the symbol will only be visible within its containing module.
+atomic - Ensures that all operations performed on the symbol will be atomic.
+strong - Declares that the symbol is a strong reference.
+weak - Declares that the symbol is a weak reference.
+greedy - Declares that the symbol is a greedy reference.
+unsafe - Declares that the symbol is unsafe to use and requires an unsafe context to declare.
+    Global raw pointers must be declared as unsafe.
+
+Strong Variables:
+Strong variables are reference-type variables which use reference counting to enable the use of multiple pointers to the same object.
+All strong reference variables to an object own the object equally.
+Whenever a new strong reference is made to the object, the reference count for the object is incremented by one.
+Whenever a strong reference to a particular object goes out of scope, the reference count for the object is decremented by one.
+When the reference count reaches zero, the object is automatically deleted.
+Strong variables can be released manually before they go out of scope.
+Releasing a strong variable will decrement the reference count and then invalidate the underlying pointer.
+It can then no longer be used until it has been reassigned.
+
+***NOTE: If you return a strong reference from a function, its lifetime will be EXTENDED for the lifetime of the calling scope.
+
+Example:
+
+fun f() {
+    strong var x = 10
+    return x
+}
+
+fun main(args) {
+    if args[0] {
+        print(f())
+    } // The lifetime of the object returned by "f" is extended beyond the return statement in "f" until the end of this if-block (i.e. the calling scope), at which point its reference count reaches zero.
+}
+
+Weak Variables:
+Weak variables are reference-type variables which allow you to refer to an object owned by a strong reference without changing the reference count.
+Weak references should be used when there is a possibility where using a strong reference would create a reference cycle.
+Weak references have the possibility of referring to an object after it has been deleted.
+Because of this, all weak references are optional types.
+If the type is not declared, a weak reference is automatically declared as a regular optional (ex. "weak var x = strongVar" where "strongVar" is an "Int" makes "x" be "Int?").
+Weak variables can be "released", but all this does is set the underlying pointer to null.
+It can then no longer be referenced until it has been reassigned to another strong or weak reference.
+Weak references cannot be returned from a function. They must be transformed into a strong reference first.
+
+Greedy Variables:
+Greedy variables are reference-type variables which use scoping to control the lifetime of the target object.
+Only one greedy reference can own its target object.
+If you want to extend the lifetime or transfer the ownership of an object owned by a greedy reference, it must be explicitly released using a "release" expression.
+Once a greedy reference has been released, it cannot be referenced again until it has been reassigned.
+Greedy references cannot be returned from a function. They must be released into another kind of reference first.
+
+Reference Variables:
+Reference variables are variables which can refer to other stack-allocated variables.
+Reassigning or otherwise modifying a reference variable will reassign/modify the underlying value.
+This means that the value held by the original variable will see any change made via the reference variable.
+Reference targets for reference variables cannot be reassigned.
+Reference variables cannot be initially assigned an immediate value; they must be assigned a variable.
+Reference variables must be defined where they are declared.
+Global variables cannot be reference variables; reference variables are purely local.
+Reference variables are declared with the "ref" keyword: ref var x = y, ref const a = b
+Returning a reference variable from a function will return a copy of the value it references.
+
+Reference Table:
+
+Src | Dest | Can do?
+----|------|--------
+S   | S    | Y
+W   | S    | Y
+G   | S    | Y, with release
+R   | S    | Y
+V   | S    | Y, with copy
+S   | W    | Y
+W   | W    | Y
+G   | W    | N
+R   | W    | N
+V   | W    | N
+S   | G    | N
+W   | G    | N
+G   | G    | Y, with release
+R   | G    | Y
+V   | G    | Y, with copy
+S   | R    | Y, with release and unsafe
+W   | R    | Y, with unsafe
+G   | R    | Y, with release and unsafe
+R   | R    | Y, with unsafe
+V   | R    | N
+S   | V    | N
+W   | V    | N
+G   | V    | N
+R   | V    | N
+V   | V    | Y, with copy
+
+strong var x = strongVar                // OK: Increment the ref count by 1
+strong var y = weakVar                  // OK: Convert the weak ref to a temporary strong ref and then increment the ref count by 1
+strong var z = greedyVar                // ERR: Cannot transfer ownership from a greedy reference without explicit release
+strong var z2 = release greedyVar       // OK: Release the object owned by "greedyVar" and transfer ownership to "z2"
+strong var w = rawPtrVar                // OK: "w" now owns the object pointed to by "rawPtrVar"
+strong var v = 10                       // OK: Allocate space for one Int on the heap and copy the value to "v"
+
+weak var x = strongVar                  // OK: Copy the pointer but do not increment the ref count
+weak var y = weakVar                    // OK: Convert the weak ref to a temporary strong ref and then copy the pointer
+weak var z = greedyVar                  // ERR: Cannot transfer ownership from a greedy reference to an unowning symbol without explicit release
+weak var z2 = release greedyVar         // ERR: Weak references cannot own objects
+weak var w = rawPtrVar                  // ERR: Weak references cannot own objects
+weak var v = 10                         // ERR: Weak references cannot own objects
+
+greedy var x = strongVar                // ERR: Cannot transfer ownership from strong to greedy references
+greedy var y = weakVar                  // ERR: Weak references do not own objects and therefore cannot transfer ownership
+greedy var z = greedyVar                // ERR: Cannot transfer ownership from a greedy reference without explicit release
+greedy var z2 = release greedyVar       // OK: Release the object owned by "greedyVar" and transfer ownership to "z2"
+greedy var w = rawPtrVar                // OK: "w" now owns the object pointed to by "rawPtrVar"
+greedy var v = 10                       // OK: Allocate space for one Int on the heap and copy the value to "v"
+
+var x: Int* = strongVar                 // ERR: Cannot transfer ownership from a strong reference to an unowning symbol without explicit release
+var x2: Int* = release strongVar        // ERR: Cannot release ownership from a strong reference outside of an unsafe context
+unsafe {
+    var x3: Int* = release strongVar    // OK: Release the object owned by "strongVar" and copy the pointer to "x3"
+}
+var y: Int* = weakVar                   // ERR: Cannot retrieve the raw pointer from a weak reference outside of an unsafe context
+unsafe {
+    var y2: Int* = weakVar              // OK: Copy the pointer to "y2"
+}
+var z: Int* = greedyVar                 // ERR: Cannot transfer ownership from a greedy reference to an unowning symbol without explicit release
+var z2: Int* = release greedyVar        // ERR: Cannot release ownership from a greedy reference outside of an unsafe context
+unsafe {
+    var z3: Int* = release greedyVar    // OK: Release the object owned by "greedyVar" and copy the pointer to "z3"
+}
+var w: Int* = rawPtrVar                 // ERR: Cannot copy raw pointers outside of an unsafe context
+unsafe {
+    var w2: Int* = rawPtrVar            // OK: Copy the raw pointer to "w2"
+}
+var v: Int* = 10                        // ERR: Value of type "Int" is not assignable to symbol of type "Int*"
+
+var x = strongVar                       // ERR: Cannot assign a strong reference to a non-referencing symbol
+var y = weakVar                         // ERR: Cannot assign a weak reference to a non-referencing symbol
+var z = greedyVar                       // ERR: Cannot assign a greedy reference to a non-referencing symbol
+var w = rawPtrVar                       // ERR: Cannot assign a raw pointer to a non-referencing symbol
+var v = 10                              // OK: Assign the value to the symbol
+
+When returning values from functions:
+S, W > G > V, R
+
+This means that:
+If any control paths return a strong or weak reference, then all control paths will return a strong reference.
+Otherwise, if any control paths return a greedy reference, then all control paths will return a greedy reference.
+Otherwise, all control paths will return a value type (this includes raw pointers, which are technically value types).
+
+class A {
+    fun f() {
+
+    }
+
+    fun g() {
+
+    }
+
+    final fun h() {
+
+    }
+
+    fun j() {
+
+    }
+}
+
+class B: A {
+    override fun f() {
+
+    }
+
+    fun g() { // WARN: Function "A.g" hides function "B.g"
+
+    }
+
+    override fun h() {} // ERR: Cannot override final function "B.h"
+    fun h() {} // WARN: Function "A.h" hides final function "B.h"
+
+    fun i() {
+
+    }
+}
+
+Local Variables:
+Local variables are variables which are declared within a function. The lifetime and scope of a local variable is (usually) restricted to its lexical scope.
+They can either be mutable (using the "var" keyword) or immutable (using the "const" keyword). Local constants must be initialized at their declaration site.
+
+Local variables can have the following modifiers:
+atomic - Requires all accesses to the variable to be atomic.
+strong - Declares that this variable is a strong reference to a value on the heap.
+weak - Declares that this variable is a weak reference to a value on the heap.
+greedy - Declares that this variable is a greedy reference to a value on the heap.
+ref - Declares that this variable is a reference to a value on the stack.
+
+The lifetime of a value held by a local variable can be extended by keeping a reference to it outside of its lexical scope.
+
+For example:
+
+fun f() {
+    greedy var x
+    {
+        greedy var y = 10
+        x = release y
+    } // The lifetime of the value "10" is extended beyond the end of this scope because it is now owned by "x"
+    print(x) // Prints "10"
+} // The value "10" is freed here
+
+Instance Variables:
+Instance variables are variables which are created per object instance. Classes, structures, and enumerations can have instance variables.
+
+Instance variables can have the following modifiers:
+atomic - Requires all accesses to the variable to be atomic.
+strong - Declares that this variable is a strong reference to a value on the heap.
+weak - Declares that this variable is a weak reference to a value on the heap.
+greedy - Declares that this variable is a greedy reference to a value on the heap.
+public - The variable is visible anywhere.
+private - The variable is visible only to symbols within the same declaring lexical scope.
+protected - The variable is visible only to symbols within the same declaring lexical scope and to subtypes of the declaring type.
+internal - The variable is visible only to symbols within the same declaring module.
+static - The variable maintains only one copy for all instances of the declaring type rather than one copy per instance.
+unsafe - The variable uses unsafe semantics and requires all users of the variable to have an unsafe context when accessing this variable.
+lazy - The variable will be loaded lazily (i.e. it will not be initialized until an attempt is made to access it).
+
+For both instance variables and constants, their definition may be deferred to within the declaring type's constructor.
+Instance constants may only be initialized once per constructor.
+
+You can create custom getters, setters, and initializers for specific instance variables directly at the declaration site.
+You need not specify all of them; you can do just a getter and a setter or just an initializer for example.
+If a getter or a setter does not declare a visibility modifier, it will inherit its visibility from the instance variable.
+
+Example instance variable block declaration:
+
+class A {
+    var x {
+        public get {
+            print("Accessing variable x")
+            return x
+        }
+
+        internal set(nx) {
+            x = nx
+        }
+
+        init {
+            return 20
+        }
+    }
+}
+
+Getters:
+Getters define how an instance variable may be read.
+Getters may declare their own visibility, atomicity, safety, and exception rules separate from setters, and the value returned from a getter will be the value the caller receives when attempting to read the variable.
+Any visibility declared on the getter itself automatically overrides the visibility declared on the instance variable (but only for the getter).
+
+A getter is triggered whenever an instance variable is read. Given the previously defined class "A":
+
+fun main() {
+    const a = A()
+
+    print(a.x) // Triggers the getter for "A.x"
+}
+
+You don't have to specify the body of a getter; you can use it solely for adding modifiers to the read property of a variable:
+
+class B {
+    var x {
+        public atomic get
+    }
+}
+
+Grammar of a Getter:
+VariableGetterDeclaration = VariableGetterModifiers? "get" FunctionBlock;
+VariableGetterModifiers = VariableGetterModifier+;
+VariableGetterModifier = "public" | "private" | "protected" | "internal" | "atomic" | "unsafe" | "throwing" | "noexcept";
+FunctionBlock = "{" FunctionBlockContent* "}";
+
+Setters:
+Setters define how an instance variable may be modified.
+Setters may declare their own visibility, atomicity, safety, and exception rules separate from getters, and the value returned from a setter will be whatever the instance variable has after the setter has ran.
+A setter accepts exactly one parameter, of which may be named whatever you wish and can have any modifiers or type declarations a normal parameter would have.
+If no type is specified, the parameter will be assumed to have the same type as the instance variable. If no modifiers are specified, the argument will be passed by value as a mutable parameter.
+Any visibility declared on the setter itself automatically overrides the visibility declared on the instance variable (but only for the setter).
+
+A setter is triggered whenever an instance variable is modified. Given the previously defined class "A":
+
+fun main() {
+    var a = A()
+
+    a.x = 20 // Triggers the setter for "A.x"
+
+    print(a.x)
+}
+
+You don't have to specify the body of a setter; you can use it solely for adding modifiers to the write property of a variable:
+
+class B {
+    var x {
+        protected unsafe set
+    }
+}
+
+The setter will trigger whenever an attempt is made to modify the variable, no matter the method used.
+This means that attempting to modify the value through the original variable, a reference to the variable, or even a raw pointer will trigger the setter.
+
+Grammar of a Setter:
+VariableSetterDeclaration = VariableSetterModifiers? "set" "(" Parameter ")" FunctionBlock;
+VariableSetterModifiers = VariableSetterModifier+;
+VariableSetterModifier = "public" | "private" | "protected" | "internal" | "atomic" | "unsafe" | "throwing" | "noexcept";
+FunctionBlock = "{" FunctionBlockContent* "}";
+
+Initializers:
+Initializers define how an instance variable is initialized.
+Non-lazy initializers are ran whenever a new object instance is created, after any inline initializers for instance variables have ran and just before the constructor has ran.
+This means that you may reference another instance variable within a non-lazy initializer block, but only if it has an inline initializer (i.e. it is initialized at its declaration site).
+Initializers function exactly as getters do: whatever value is returned from the initializer is the value that is stored in the instance variable.
+If an instance constant has an initializer, it cannot be initialized anywhere else.
+You cannot reference the instance variable (or constant) that is being initialized from within the initializer.
+If an initializer requires an unsafe context, atomicity, or exception handling, any related modifiers must be declared on the instance variable (or constant) itself.
+If a variable is declared as "lazy", it cannot be referenced within an initializer.
+
+Grammar of an Initializer:
+VariableInitializerDeclaration = "init" FunctionBlock;
+FunctionBlock = "{" FunctionBlockContent* "}";
+
+----- Miscellaneous -----
+The "super" keyword is used to reference the current object as an instance of one of its parent types.
+The "super" keyword can be used exactly like the "self" keyword.
+
+var x: Int? = 10
+
+x.y // Regular access
+x?.y // Conditional access
+
+Conditional Access:
+The conditional access operator "?." allows you to access an optional variable only if it has a value (aka optional chaining).
+The result of a conditional access operator depends on the optional typing of the original variable.
+For example, in the expression "var z = x?.y", if "x" is of type "A?" and "y" is of type "Double", then "z" will be of type "Double?".
+If "x" is instead of type "A!" and "y" is of type "Double", then "z" will be of type "Double!".
+If the resulting expression would yield a "Void" type, then it will not be wrapped in an optional (it will remain a "Void" type).
+
+You can combine conditional access with nil-coalescing operators to ensure that the resulting type is a non-optional type.
+
+For example:
+var z = x?.y ?? 0 // If "x" is of type "A?" and "y" is of type "Double", then "z" will be of type "Double"
+
+// The above is equivalent to typing the following:
+var z = x ? x!.y : 0
+
+// Or also:
+var z = 0
+if x, z = x!.y
+
+----- Expressions -----
+Infix Operators:
++           Add: Returns the addition of the first and second arguments.
+-           Subtract: Returns the subtraction of the first and second arguments.
+*           Multiply: Returns the multiplication of the first and second arguments.
+/           Divide: Returns the division of the first and second arguments.
+%           Modulo: Returns the modulus of the first and second arguments.
+**          Exponent: Returns the exponentiation of the first and second arguments.
+&           Bitwise AND: Returns the bitwise AND of the first and second arguments.
+|           Bitwise OR: Returns the bitwise OR of the first and second arguments.
+^           Bitwise XOR: Returns the bitwise XOR of the first and second arguments.
+<<          Bitshift left: Returns the left bitshift of the first and second arguments.
+>>          Bitshift right: Returns the right bitshift of the first and second arguments.
+&&          Logical AND: Returns the logical AND of the first and second arguments.
+||          Logical OR: Returns the logical OR of the first and second arguments.
+<           Less than: Returns true if the first argument is less than the second argument.
+>           Greater than: Returns true if the first argument is greater than the second argument.
+<=          Less than or equals: Returns true if the first argument is less than or equal to the second argument.
+>=          Greater than or equals: Returns true if the first argument is greater than or equal to the second argument.
+==          Equals: Returns true if the first argument equals the second argument.
+!=          Not equals: Returns true if the first argument does not equal the second argument.
+===         Object equals: Returns true if the address of the first argument equals the address of the second argument.
+!==         Object not equals: Returns true if the address of the first argument does not equal the address of the second argument.
+<=>         Tri-comparison: Returns an "Int" describing the relation between the first and second arguments.
+.           Access: Returns the second argument accessed through the first argument.
+..          Inclusive range: Returns a closed range which includes both the first and second arguments.
+...         Exclusive range: Returns a half-open range which includes the first argument and excludes the second.
+?.          Optional access: Returns the second argument, which is accessed through the first argument, wrapped in the same kind of optional as the first argument, or nil if the first argument is also nil.
+??          Nil-coalescing: Returns the first optional-type argument unwrapped if it contains a value, and otherwise returns the second argument.
+=           Assign: Assigns the second argument to the first.
++=          Add assign: Performs an arithmetic addition on the first and second arguments and assigns the result to the first.
+-=          Subtract assign: Performs an arithmetic subtraction on the first and second arguments and assigns the result to the first.
+*=          Multiply assign: Performs an arithmetic multiplication on the first and second arguments and assigns the result to the first.
+/=          Divide assign: Performs an arithmetic division on the first and second arguments and assigns the result to the first.
+%=          Modulo assign: Performs an arithmetic modulus on the first and second arguments and assigns the result to the first.
+**=         Exponent assign: Performs an arithmetic exponentiation on the first and second arguments and assigns the result to the first.
+&=          Bitwise AND assign: Performs a bitwise AND on the first and second arguments and assigns the result to the first.
+|=          Bitwise OR assign: Performs a bitwise OR on the first and second arguments and assigns the result to the first.
+^=          Bitwise XOR assign: Performs a bitwise XOR on the first and second arguments and assigns the result to the first.
+<<=         Bitshift left assign: Performs a left bitshift on the first and second arguments and assigns the result to the first.
+>>=         Bitshift right assign: Performs a right bitshift on the first and second arguments and assigns the result to the first.
+~=          Bitwise NOT assign: Performs a bitwise NOT on the second argument and assigns the result to the first.
+and         Logical AND: Performs the same operation as the double ampersand operator "&&".
+or          Logical OR: Performs the same operation as the double pipe operator "||".
+is          Type checking: Returns true if the actual type of the first argument is a subtype of or the same type as the second argument, and false otherwise.
+as          Cast: Casts the first argument as the second argument. If it cannot be cast, then an error will be thrown.
+as?         Implicit optional cast: Casts the first argument as the second argument and return the first argument wrapped in an implicit optional of the same type as the second argument.
+                If the first argument cannot be cast to the second argument, then the result will be nil.
+as!         Explicit optional cast: Casts the first argument as the second argument and return the first argument wrapped in an explicit optional of the same type as the second argument.
+                If the first argument cannot be cast to the second argument, then the result will be nil.
+
+Prefix Operators:
++           Arithmetic positive: Passes the argument through unchanged.
+-           Arithmetic negation: Negates the argument (multiplies by -1).
+++          Increment: Increments the argument before the rest of the expression has been evaluated.
+--          Decrement: Decrements the argument before the rest of the expression has been evaluated.
+~           Bitwise NOT: Performs a bitwise NOT on the argument.
+!           Logical NOT: Performs a logical NOT on the argument.
+not         Logical NOT: Performs the same operation as the prefix exclamation point operator "!".
+*           Dereference: Dereferences the argument, which must be a raw pointer. This expression requires an unsafe context.
+&           Address-of: Returns a raw pointer to the argument. This expression requires an unsafe context.
+release     Reference release: Releases the reference argument and yields a raw pointer. If the destination of the expression is not a managed reference, then the expression requires an unsafe context.
+try?        Try with implicit optional: Returns the argument to the operator wrapped in an implicit optional type. The optional will be empty if the argument threw an error during its evaluation.
+try!        Try with explicit optional: Returns the argument to the operator wrapped in an explicit optional type. The optional will be empty if the argument threw an error during its evaluation.
+await       Await async operation: Waits on the target asynchronous argument to return a value before returning a result.
+
+Postfix Operators:
+!           Optional unwrap: Unwraps the optional-type argument. This operator works for both implicit and explicit optionals, but is redundant for explicit ones. If the optional does not have a value, this operator will throw an error.
+++          Increment: Increments the argument after the rest of the expression has been evaluated.
+--          Decrement: Decrements the argument after the rest of the expression has been evaluated.
+()          Function call: Executes the first argument as a function and passes the arguments provided in the parentheses to it.
+[]          Subscript: Allows you to access a subvalue within the outer expression (normally used for things like array accesses).
+
+Miscellaneous Operators:
+?:          Ternary conditional: Yields the second expression if the first expression evaluates to true, and otherwise yields the third expression.
+()          Grouping: Allows you to circumvent the normal precedence rules and require that the expression between the parentheses be evaluated first.
+=>          Lambda: Returns an anonymous function (i.e. a closure, and yes I mean closure because lambdas can capture local variables declared outside of the lambda).
+
+(x, y) - Tuple
+[x, y] - Array
+{ "x": x, "y": y } - Map
+
+You can use the "global" keyword at the start of an access expression to refer to global symbols (i.e. symbols declared in the current module's global scope).
+
+Precedence:
+=
+?:, =>
+||
+&&
+|
+^
+&
+==, !=, ===, !==
+<, <=, >, >=, <=>
+??
+is, as, as?, as!
+.., ...
+<<, >>
++, -
+*, /, %
+**
+prefix: +, -, ++, --, ~, !, *, &, release, try?, try!, await
+postfix: !, ++, --, (), []
+., ?.
+
+Grammar of an Expression:
+Expression = AssignmentExpression;
+AssignmentExpression = L2Expression (AssignmentOperator AssignmentExpression)?;
+L2Expression = LambdaExpression | TernaryExpression;
+
+LambdaExpression = LambdaHeader "=>" LambdaBody;
+LambdaHeader = "async"? LambdaParameters;
+LambdaParameters = Parameter | ("(" Parameter ("," Parameter)* ")");
+LambdaBody = Expression | FunctionBlock;
+
+TernaryExpression = LogicalOrExpression ("?" Expression ":" Expression)?;
+LogicalOrExpression = LogicalAndExpression ("||" LogicalAndExpression)*;
+LogicalAndExpression = BitwiseOrExpression ("&&" BitwiseOrExpression)*;
+BitwiseOrExpression = BitwiseXorExpression ("|" BitwiseXorExpression)*;
+BitwiseXorExpression = BitwiseAndExpression ("^" BitwiseAndExpression)*;
+BitwiseAndExpression = EqualityExpression ("&" EqualityExpression)*;
+EqualityExpression = RelationalExpression (EqualityOperator RelationalExpression)*;
+RelationalExpression = NilCoalescingExpression (RelationalOperator NilCoalescingExpression)*;
+NilCoalescingExpression = CastingExpression ("??" CastingExpression)*;
+CastingExpression = RangeExpression (CastingOperator Type)*;
+RangeExpression = BitshiftExpression (RangeOperator BitshiftExpression)*;
+BitshiftExpression = AdditiveExpression (BitshiftOperator AdditiveExpression)*;
+AdditiveExpression = MultiplicativeExpression (AdditiveOperator MultiplicativeExpression)*;
+MultiplicativeExpression = ExponentialExpression (MultiplicativeOperator ExponentialExpression)*;
+ExponentialExpression = PrefixExpression ("**" PrefixExpression)*;
+PrefixExpression = PrefixOperator* PostfixExpression;
+PostfixExpression = AccessCallExpression PostfixOperator*;
+AccessCallExpression = PrimaryExpression (AccessExpressionEnd | CallExpressionEnd)*;
+AccessExpressionEnd = AccessOperator PrimaryExpression;
+CallExpressionEnd = FunctionCallExpressionEnd | SubscriptExpressionEnd;
+FunctionCallExpressionEnd = "(" ExpressionList? ")";
+ExpressionList = Expression ("," Expression)*;
+SubscriptExpressionEnd = "[" Expression "]";
+
+PrimaryExpression = LiteralExpression | BaseID | MapExpression | ArrayExpression | TupleExpression | ("(" Expression ")");
+LiteralExpression = IntegerLiteral | HexLiteral | OctalLiteral | BinaryLiteral | FloatLiteral | StringLiteral | BooleanLiteral | "nil" | "self" | "super";
+MapExpression = "{" MapEntries? "}";
+MapEntries = MapEntry ("," MapEntry)*;
+MapEntry = Expression ":" Expression;
+ArrayExpression = "[" ExpressionList? "]";
+TupleExpression = "(" Expression ("," Expression)+ ")";
+BaseID = ("global" ".")? ID Generics?;
+
+----- How to Evaluate an Access Expression -----
+Given the expression "x.y" where "x" is of type "A" and "y" is of type "B":
+1. Evaluate "x".
+2. Set the current context to the type of "x" (the context is set to "A").
+3. Evaluate "y".
+4. Restore the current context.
+5. Return the type of "y" (the type is "B").
+
+Note: The right-hand argument of an access expression MUST be one of:
+1. ID Generics?
+2. "self"
+3. "super"
+
+TypeID = TypeBase TypeSuffix*;
+TypeBase = TupleType | MapType | BaseTypeID;
+TupleType = "(" TypeID ("," TypeID)+ ")";
+MapType = "[" TypeID ":" TypeID "]";
+BaseTypeID = ID Generics? ("." BaseTypeID)?;
+TypeSuffix = FunctionTypeSuffix | SubscriptTypeSuffix | "?" | "!" | "*" | "...";
+FunctionTypeSuffix = "->" TypeID;
+SubscriptTypeSuffix = "[" TypeID? "]";
+Generics = "<" TypeID ("," TypeID)* ">";
