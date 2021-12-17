@@ -627,3 +627,35 @@ TypeSuffix = FunctionTypeSuffix | SubscriptTypeSuffix | "?" | "!" | "*" | "...";
 FunctionTypeSuffix = "->" TypeID;
 SubscriptTypeSuffix = "[" TypeID? "]";
 Generics = "<" TypeID ("," TypeID)* ">";
+
+String Escapes:
+a - Alert
+b - Backspace
+f - Form feed
+n - Line feed
+r - Carriage return
+t - Horizontal tab
+v - Vertical tab
+' - Single quote
+" - Double quote
+\ - Backslash
+nnn - Octal value (byte) nnn
+unnnn - Unicode value U+nnnn
+Unnnnnnnn - Unicode value U+nnnnnnnn
+{x} - Interpolate expression x
+
+All of the above escape sequences are passed through unchanged except for interpolations.
+
+struct Player {
+    var name: String
+    var score: Int
+}
+
+fun f(player: Player) {
+    print("Hello, \{player.name}. Your current score is \{player.score}.")
+}
+
+fun main() {
+    const p = Player("Bob", 20)
+    f(p)
+}
