@@ -10,6 +10,8 @@ StringToken::StringToken(TokenType type, const String& data, const SourceMeta& m
     Token(type, data, meta), interpolations(interpolations) {}
 StringToken::~StringToken() {}
 
+Lexer::Lexer(const String& file, StringBuffer& buf): file(file), buf(buf), line(1), col(1) {}
+
 SourceMeta Lexer::getSourceMeta() {
     return { file, line, col };
 }
@@ -28,24 +30,183 @@ void Lexer::retract(char c) {
     buf.putback(c);
 }
 
-Token* Lexer::lexComment() {
-    return nullptr;
+Token* Lexer::lexSingleLineComment() {
+    while (!isNewlineChar(get()))
+        advance();
+    return lexNewline();
+}
+
+Token* Lexer::lexMultiLineComment() {
+    auto sourceMeta = getSourceMeta();
+    advance(); // The initial '/' has already been read, but we still need to read the initial '*' that proceeds it 
+    int c;
+    while ((c = get()) != EOF) {
+        advance();
+        if (c == '*' && get() == '/') {
+            advance();
+            return nextToken();
+        }
+    }
+    throw LexerException(sourceMeta, "Invalid termination of comment block");
 }
 
 Token* Lexer::lexNewline() {
-    return nullptr;
+    auto sourceMeta = getSourceMeta();
+    StringBuffer sb;
+    auto c = get();
+    if (c == '\r')
+        sb << (char) advance();
+    if (c == '\n')
+        sb << (char) advance();
+    col = 1;
+    line++;
+    String content = sb.str();
+    return new Token{TokenType::NL, content, sourceMeta};
+}
+
+void Lexer::lexExponent(StringBuffer& sb) {
+    sb << (char) advance(); // Skip the [eE]
+
+    if (get() == '+' || get() == '-')
+        sb << (char) advance();
+    
+    int c = get();
+    if (!isdigit(c))
+        throw InvalidInputException(getSourceMeta(), c);
+    sb << (char) advance();
+    
+    while (isdigit(get()))
+        sb << (char) advance();
+}
+
+Token* Lexer::lexHexLiteral(const SourceMeta& sourceMeta) {
+    StringBuffer sb;
+    
+    int c = get();
+    if (!isxdigit(c))
+        throw InvalidInputException(getSourceMeta(), c);
+    sb << (char) advance();
+
+    while (isxdigit(get()))
+        sb << (char) advance();
+    
+    String content = sb.str();
+    return new Token{TokenType::HEX_LITERAL, content, sourceMeta};
+}
+
+Token* Lexer::lexOctalLiteral(const SourceMeta& sourceMeta) {
+    StringBuffer sb;
+    
+    int c = get();
+    if (!isOctalDigit(c))
+        throw InvalidInputException(getSourceMeta(), c);
+    sb << (char) advance();
+
+    while (isOctalDigit(get()))
+        sb << (char) advance();
+    
+    String content = sb.str();
+    return new Token{TokenType::OCTAL_LITERAL, content, sourceMeta};
+}
+
+Token* Lexer::lexBinaryLiteral(const SourceMeta& sourceMeta) {
+    StringBuffer sb;
+    
+    int c = get();
+    if (!isBinaryDigit(c))
+        throw InvalidInputException(getSourceMeta(), c);
+    sb << (char) advance();
+
+    while (isBinaryDigit(get()))
+        sb << (char) advance();
+    
+    String content = sb.str();
+    return new Token{TokenType::BINARY_LITERAL, content, sourceMeta};
 }
 
 Token* Lexer::lexNumber() {
+    auto sourceMeta = getSourceMeta();
+    auto initial = advance();
 
+    auto next = get();
+    if (initial == '0' && (next == 'x' || next == 'X')) {
+        advance();
+        return lexHexLiteral(sourceMeta);
+    }
+    if (initial == '0' && (next == 'o' || next == 'O')) {
+        advance();
+        return lexOctalLiteral(sourceMeta);
+    }
+    if (initial == '0' && (next == 'b' || next == 'B')) {
+        advance();
+        return lexBinaryLiteral(sourceMeta);
+    }
+
+    StringBuffer sb;
+    sb << (char) initial;
+    if (initial == '.') {
+        /*
+        We don't need to check for isdigit(next) here because we will only reach
+        this condition inside of lexSymbol when it finds a sequence of a dot
+        proceeded by a digit
+        */
+        while (isdigit(get()))
+            sb << (char) advance();
+        
+        if (get() == 'e' || get() == 'E')
+            lexExponent(sb);
+        
+        String content = sb.str();
+        return new Token{TokenType::FLOAT_LITERAL, content, sourceMeta};
+    }
+
+    while (isdigit(get()))
+        sb << (char) advance();
+    
+    if (get() == 'e' || get() == 'E') {
+        lexExponent(sb);
+        String content = sb.str();
+        return new Token{TokenType::FLOAT_LITERAL, content, sourceMeta};
+    }
+
+    if (get() == '.') {
+        sb << (char) advance();
+
+        while (isdigit(get()))
+            sb << (char) advance();
+        
+        if (get() == 'e' || get() == 'E')
+            lexExponent(sb);
+        
+        String content = sb.str();
+        return new Token{TokenType::FLOAT_LITERAL, content, sourceMeta};
+    }
+
+    String content = sb.str();
+    return new Token{TokenType::INTEGER_LITERAL, content, sourceMeta};
 }
 
 Token* Lexer::lexSymbol() {
+    auto initial = get();
+
     auto sourceMeta = getSourceMeta();
     StringBuffer sb;
     sb << (char) advance();
-    while (isSymbolPart(get()))
+    
+    auto next = get();
+
+    if (initial == '/' && next == '/')
+        return lexSingleLineComment();
+    if (initial == '/' && next == '*')
+        return lexMultiLineComment();
+    if (initial == '.' && isdigit(next)) {
+        retract(initial);
+        return lexNumber();
+    }
+
+    while (isSymbolPart(get())) {
         sb << (char) advance();
+    }
     
     String content = sb.str();
     TokenType type = TokenType::EOF_TOKEN;
@@ -97,7 +258,19 @@ Token* Lexer::lexIdentifier() {
 }
 
 Token* Lexer::lexMeta() {
-    return nullptr;
+    auto sourceMeta = getSourceMeta();
+
+    StringBuffer sb;
+    sb << (char) advance();
+    auto t = lexIdentifier();
+
+    sb << t->data;
+
+    delete t;
+
+    String content = sb.str();
+
+    return new Token{ getMetaType(sourceMeta, content), content, sourceMeta };
 }
 
 void Lexer::lexUnicodeEscapeSequence(StringBuffer& sb, int n) {
@@ -118,6 +291,7 @@ void Lexer::lexOctalEscapeSequence(StringBuffer& sb) {
     }
 }
 
+// TODO: Fix the interpolation to allow for nested strings
 void Lexer::lexInterpolationEscapeSequence(int pos, Map<int, String>& interpolations) {
     StringBuffer sb;
     advance();
@@ -171,14 +345,17 @@ void Lexer::lexEscapeSequence(StringBuffer& sb, Map<int, String>& interpolations
 
 Token* Lexer::lexString(int delimiter) {
     auto sourceMeta = getSourceMeta();
+    advance();
     StringBuffer sb;
     int c;
     Map<int, String> interpolations;
     while ((c = get()) != delimiter) {
         if (c == '\\') {
             lexEscapeSequence(sb, interpolations);
-        } else
+        } else {
             sb << (char) c;
+            advance();
+        }
     }
     advance();
     String content = sb.str();
@@ -186,6 +363,12 @@ Token* Lexer::lexString(int delimiter) {
 }
 
 Token* Lexer::nextToken() {
+    while (isblank(get()))
+        advance();
+
+    if (!hasNext())
+        return new Token{TokenType::EOF_TOKEN, "(EOF)", getSourceMeta()};
+
     auto c = get();
     if (isSymbolStart(c))
         return lexSymbol();
@@ -197,6 +380,8 @@ Token* Lexer::nextToken() {
         return lexString(c);
     if (c == '@')
         return lexMeta();
+    if (isNewlineChar(c))
+        return lexNewline();
     throw InvalidInputException(getSourceMeta(), c);
 }
 
@@ -231,6 +416,14 @@ bool isSimpleEscapeCharacter(int c) {
 
 bool isOctalDigit(int c) {
     return c >= '0' && c <= '7';
+}
+
+bool isBinaryDigit(int c) {
+    return c == '0' || c == '1';
+}
+
+bool isNewlineChar(int c) {
+    return c == '\r' || c == '\n';
 }
 
 TokenType getIdentifierType(const String& str) {
@@ -486,6 +679,10 @@ TokenType getMetaType(const SourceMeta& sourceMeta, const String& str) {
         return TokenType::META_STACKALLOC;
     if (str == "@srclock")
         return TokenType::META_SRCLOCK;
+    if (str == "@throwAnywhere")
+        return TokenType::META_THROWANYWHERE;
+    if (str == "@externalInit")
+        return TokenType::META_EXTERNALINIT;
     throw InvalidInputException(sourceMeta, str[0]);
 }
 

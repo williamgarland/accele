@@ -8,7 +8,7 @@ namespace acl {
         sb << meta.file << " at " << meta.line << ":" << meta.col << ": " << message;
         this->message = sb.str();
     }
-    const char* LexerException::what() const {
+    const char* LexerException::what() const noexcept {
         return message.c_str();
     }
 
@@ -19,7 +19,7 @@ namespace acl {
         sb << meta.file << " at " << meta.line << ":" << meta.col;
         message = sb.str();
     }
-    const char* InvalidInputException::what() const {
+    const char* InvalidInputException::what() const noexcept {
         return message.c_str();
     }
 }

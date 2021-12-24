@@ -26,7 +26,7 @@ namespace acl {
         FLOAT_LITERAL, STRING_LITERAL, NIL_LITERAL, EOF_TOKEN, NL,
 
         // ----- Meta ----- //
-        META_NORETURN, META_STACKALLOC, META_SRCLOCK
+        META_NORETURN, META_STACKALLOC, META_SRCLOCK, META_THROWANYWHERE, META_EXTERNALINIT
     };
 
     struct Token {
@@ -56,8 +56,13 @@ namespace acl {
         int advance();
         void retract(char c);
     private:
-        Token* lexComment();
+        Token* lexSingleLineComment();
+        Token* lexMultiLineComment();
         Token* lexNewline();
+        void lexExponent(StringBuffer& sb);
+        Token* lexHexLiteral(const SourceMeta& sourceMeta);
+        Token* lexOctalLiteral(const SourceMeta& sourceMeta);
+        Token* lexBinaryLiteral(const SourceMeta& sourceMeta);
         Token* lexNumber();
         Token* lexSymbol();
         Token* lexIdentifier();
@@ -68,16 +73,19 @@ namespace acl {
         void lexEscapeSequence(StringBuffer& sb, Map<int, String>& interpolations);
         Token* lexString(int delimiter);
     public:
+        Lexer(const String& file, StringBuffer& buf);
         Token* nextToken();
         bool hasNext() const;
     };
 
     bool isOctalDigit(int c);
+    bool isBinaryDigit(int c);
     bool isSimpleEscapeCharacter(int c);
     bool isIdentifierStart(int c);
     bool isIdentifierPart(int c);
     bool isSymbolStart(int c);
     bool isSymbolPart(int c);
+    bool isNewlineChar(int c);
 
     TokenType getIdentifierType(const String& str);
     TokenType getSymbolType(const SourceMeta& sourceMeta, const String& str);
