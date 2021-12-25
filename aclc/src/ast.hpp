@@ -10,6 +10,12 @@ struct Node {
 	virtual ~Node();
 };
 
+struct Ast {
+	List<Node*> content;
+	Ast(const List<Node*>& content);
+	~Ast();
+};
+
 struct TypeRef : public Node {
 	TypeRef(const SourceMeta& sourceMeta);
 	virtual ~TypeRef();
