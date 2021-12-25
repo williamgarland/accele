@@ -5,7 +5,10 @@
 int main(int argc, char* argv[]) {
     using namespace acl;
 
-    String file = "test.accele";
+    if (argc < 2)
+        return 1;
+
+    String file = String(argv[1]);
 
     std::ifstream ifs(file);
 
