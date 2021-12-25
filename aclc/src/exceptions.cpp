@@ -3,46 +3,56 @@
 #include "lexer.hpp"
 
 namespace acl {
-LexerException::LexerException() : message("Lexer exception") {}
-LexerException::LexerException(const SourceMeta& meta, const String& message) {
-	StringBuffer sb;
-	sb << "In module ";
-	sb << meta.file << " at " << meta.line << ":" << meta.col << ": "
-	   << message;
-	this->message = sb.str();
-}
-const char* LexerException::what() const noexcept { return message.c_str(); }
-
-InvalidInputException::InvalidInputException() : message("Invalid input") {}
-InvalidInputException::InvalidInputException(const SourceMeta& meta,
-											 int input) {
-	StringBuffer sb;
-	sb << "Invalid input '" << (char)input << "' in module ";
-	sb << meta.file << " at " << meta.line << ":" << meta.col;
-	message = sb.str();
+AclException::AclException() : message("Unknown error") {}
+AclException::AclException(const String& protocol, const SourceMeta& meta,
+						   const String& message) {
+	updateMessage(protocol, meta, message);
 }
 
-ParserException::ParserException(const SourceMeta& meta,
+AclException::~AclException() {}
+
+const char* AclException::what() const noexcept { return message.c_str(); }
+
+void AclException::updateMessage(const String& protocol, const SourceMeta& meta,
 								 const String& message) {
 	StringBuffer sb;
+	sb << "The following violates ASP " << protocol << ":\n";
 	sb << "In module ";
 	sb << meta.file << " at " << meta.line << ":" << meta.col << ": "
 	   << message;
 	this->message = sb.str();
 }
 
-const char* ParserException::what() const noexcept { return message.c_str(); }
+LexerException::LexerException()
+	: AclException(ASP_CORE_UNKNOWN, SourceMeta{"(ERR)", -1, -1},
+				   "Lexer exception") {}
+
+LexerException::LexerException(const SourceMeta& meta, const String& message)
+	: AclException(ASP_CORE_UNKNOWN, meta, message) {}
+
+LexerException::~LexerException() {}
+
+InvalidInputException::InvalidInputException() : LexerException() {}
+InvalidInputException::InvalidInputException(const SourceMeta& meta, int input)
+	: LexerException(meta, "Invalid input") {}
+
+InvalidInputException::~InvalidInputException() {}
+
+ParserException::ParserException(const SourceMeta& meta, const String& message)
+	: AclException(ASP_CORE_UNKNOWN, meta, message) {}
+
+ParserException::~ParserException() {}
 
 TokenMismatchException::TokenMismatchException(TokenType expected,
 											   Token* received)
 	: ParserException(received->meta, "") {
 	StringBuffer sb;
-	sb << "In module ";
-	sb << received->meta.file << " at " << received->meta.line << ":"
-	   << received->meta.col << ": ";
 	sb << "Expected token with type " << (int)expected << ", received ["
 	   << (int)received->type << "]: " << received->data;
-	this->message = sb.str();
+	String newMessage = sb.str();
+	updateMessage(ASP_CORE_UNKNOWN, received->meta, newMessage);
 }
+
+TokenMismatchException::~TokenMismatchException() {}
 
 }  // namespace acl

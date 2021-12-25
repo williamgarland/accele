@@ -4,35 +4,51 @@
 
 #include "common.hpp"
 
+#define ASP_CORE_UNKNOWN "1.0.0"
+#define ASP_INTEGER_LITERALS "1.0.1"
+#define ASP_FLOATING_POINT_LITERALS "1.0.2"
+#define ASP_STRING_ESCAPES "1.0.3"
+#define ASP_COMMENT_BLOCKS "1.0.4"
+#define ASP_SYMBOLS "1.0.5"
+#define ASP_META_KEYWORDS "1.0.6"
+
+#define ASP_SOURCE_LOCK_FRONTING "1.1.1"
+
 namespace acl {
-class LexerException : public std::exception {
+class AclException : public std::exception {
 	String message;
 
+   protected:
+	void updateMessage(const String& protocol, const SourceMeta& meta,
+					   const String& message);
+
+   public:
+	AclException();
+	AclException(const String& protocol, const SourceMeta& meta,
+				 const String& message);
+	virtual ~AclException();
+	virtual const char* what() const noexcept;
+};
+
+class LexerException : public AclException {
    public:
 	LexerException();
 	LexerException(const SourceMeta& meta, const String& message);
 	virtual ~LexerException();
-	virtual const char* what() const noexcept;
 };
 
-class InvalidInputException : public std::exception {
-	String message;
-
+class InvalidInputException : public LexerException {
    public:
 	InvalidInputException();
 	InvalidInputException(const SourceMeta& meta, int input);
 	virtual ~InvalidInputException();
 };
 
-class ParserException : public std::exception {
-   protected:
-	String message;
-
+class ParserException : public AclException {
    public:
 	ParserException(const SourceMeta& meta,
 					const String& message = "Parser exception");
 	virtual ~ParserException();
-	virtual const char* what() const noexcept;
 };
 
 enum class TokenType;

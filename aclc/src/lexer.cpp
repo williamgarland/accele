@@ -47,7 +47,8 @@ Token* Lexer::lexMultiLineComment() {
 			return nextToken();
 		}
 	}
-	throw LexerException(sourceMeta, "Invalid termination of comment block");
+	throw AclException(ASP_COMMENT_BLOCKS, sourceMeta,
+					   "Invalid termination of comment block");
 }
 
 Token* Lexer::lexNewline() {
@@ -68,7 +69,10 @@ void Lexer::lexExponent(StringBuffer& sb) {
 	if (get() == '+' || get() == '-') sb << (char)advance();
 
 	int c = get();
-	if (!isdigit(c)) throw InvalidInputException(getSourceMeta(), c);
+	if (!isdigit(c))
+		throw AclException(
+			ASP_FLOATING_POINT_LITERALS, getSourceMeta(),
+			"Expected one or more digits following the exponent");
 	sb << (char)advance();
 
 	while (isdigit(get())) sb << (char)advance();
@@ -78,7 +82,9 @@ Token* Lexer::lexHexLiteral(const SourceMeta& sourceMeta) {
 	StringBuffer sb;
 
 	int c = get();
-	if (!isxdigit(c)) throw InvalidInputException(getSourceMeta(), c);
+	if (!isxdigit(c))
+		throw AclException(ASP_INTEGER_LITERALS, getSourceMeta(),
+						   "Expected one or more hexadecimal digits");
 	sb << (char)advance();
 
 	while (isxdigit(get())) sb << (char)advance();
@@ -91,7 +97,9 @@ Token* Lexer::lexOctalLiteral(const SourceMeta& sourceMeta) {
 	StringBuffer sb;
 
 	int c = get();
-	if (!isOctalDigit(c)) throw InvalidInputException(getSourceMeta(), c);
+	if (!isOctalDigit(c))
+		throw AclException(ASP_INTEGER_LITERALS, getSourceMeta(),
+						   "Expected one or more octal digits");
 	sb << (char)advance();
 
 	while (isOctalDigit(get())) sb << (char)advance();
@@ -104,7 +112,9 @@ Token* Lexer::lexBinaryLiteral(const SourceMeta& sourceMeta) {
 	StringBuffer sb;
 
 	int c = get();
-	if (!isBinaryDigit(c)) throw InvalidInputException(getSourceMeta(), c);
+	if (!isBinaryDigit(c))
+		throw AclException(ASP_INTEGER_LITERALS, getSourceMeta(),
+						   "Expected one or more binary digits");
 	sb << (char)advance();
 
 	while (isBinaryDigit(get())) sb << (char)advance();
@@ -192,12 +202,12 @@ Token* Lexer::lexSymbol() {
 
 	String content = sb.str();
 	TokenType type = TokenType::EOF_TOKEN;
-	InvalidInputException err;
+	AclException err;
 	while (true) {
 		try {
 			type = getSymbolType(sourceMeta, content);
 			break;
-		} catch (InvalidInputException& e) {
+		} catch (AclException& e) {
 			err = e;
 			if (content.length() == 1) break;
 			char c = content[content.length() - 1];
@@ -256,8 +266,8 @@ void Lexer::lexUnicodeEscapeSequence(StringBuffer& sb, int n) {
 	for (int i = 0; i < n; i++) {
 		int c = get();
 		if (!isxdigit(c))
-			throw LexerException(getSourceMeta(),
-								 "Invalid Unicode escape sequence");
+			throw AclException(ASP_STRING_ESCAPES, getSourceMeta(),
+							   "Invalid Unicode escape sequence");
 		sb << (char)advance();
 	}
 }
@@ -298,8 +308,8 @@ void Lexer::lexInterpolationEscapeSequence(int pos,
 		sb << (char)advance();
 	}
 
-	throw LexerException(getSourceMeta(),
-						 "Invalid interpolation escape sequence");
+	throw AclException(ASP_STRING_ESCAPES, getSourceMeta(),
+					   "Invalid interpolation escape sequence");
 }
 
 void Lexer::lexEscapeSequence(StringBuffer& sb,
@@ -322,7 +332,8 @@ void Lexer::lexEscapeSequence(StringBuffer& sb,
 			getStringBufferLength(sb);	// Position of interpolation insertion
 		lexInterpolationEscapeSequence(pos, interpolations);
 	} else {
-		throw InvalidInputException(getSourceMeta(), c);
+		throw AclException(ASP_STRING_ESCAPES, getSourceMeta(),
+						   "Invalid string escape");
 	}
 }
 
@@ -359,7 +370,7 @@ Token* Lexer::nextToken() {
 	if (c == '\'' || c == '"') return lexString(c);
 	if (c == '@') return lexMeta();
 	if (isNewlineChar(c)) return lexNewline();
-	throw InvalidInputException(getSourceMeta(), c);
+	throw AclException(ASP_SYMBOLS, getSourceMeta(), "Invalid input");
 }
 
 bool Lexer::hasNext() const { return buf.rdbuf()->in_avail() > 0; }
@@ -516,7 +527,7 @@ TokenType getSymbolType(const SourceMeta& sourceMeta, const String& str) {
 	if (str == "<<=") return TokenType::DOUBLE_LT_EQUALS;
 	if (str == ">>=") return TokenType::DOUBLE_GT_EQUALS;
 
-	throw InvalidInputException(sourceMeta, str[0]);
+	throw AclException(ASP_SYMBOLS, sourceMeta, "Invalid symbol");
 }
 
 TokenType getMetaType(const SourceMeta& sourceMeta, const String& str) {
@@ -525,7 +536,7 @@ TokenType getMetaType(const SourceMeta& sourceMeta, const String& str) {
 	if (str == "@srclock") return TokenType::META_SRCLOCK;
 	if (str == "@laxthrow") return TokenType::META_LAXTHROW;
 	if (str == "@externalinit") return TokenType::META_EXTERNALINIT;
-	throw InvalidInputException(sourceMeta, str[0]);
+	throw AclException(ASP_META_KEYWORDS, sourceMeta, "Invalid meta keyword");
 }
 
 int getStringBufferLength(StringBuffer& buf) {

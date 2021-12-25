@@ -73,6 +73,8 @@ Parser::~Parser() {}
 Ast* Parser::parse() {
 	sync(0);  // Insert initial token into buffer
 
+	List<Node*> globalContent;
+
 	return nullptr;
 }
 }  // namespace acl
