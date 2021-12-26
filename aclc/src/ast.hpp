@@ -4,6 +4,23 @@
 #include "lexer.hpp"
 
 namespace acl {
+struct Symbol;
+struct Type;
+
+struct Scope {
+	Scope* parentScope;
+	List<Symbol*> symbols;
+	List<Type*> types;
+
+	Scope(Scope* parentScope);
+	virtual ~Scope();
+	virtual void addSymbol(Symbol* symbol);
+	virtual void addType(Type* type);
+	virtual Symbol* resolveSymbol(const Token* id, Type* targetType,
+								  const List<Type*>& generics);
+	virtual Type* resolveType(const Token* id, const List<Type*>& generics);
+};
+
 struct Node {
 	SourceMeta sourceMeta;
 	Node(const SourceMeta& sourceMeta);
@@ -11,9 +28,15 @@ struct Node {
 };
 
 struct Ast {
-	List<Node*> content;
-	Ast(const List<Node*>& content);
+	GlobalScope* globalScope;
+	Ast(GlobalScope* globalScope);
 	~Ast();
+};
+
+struct GlobalScope : public Node, public Scope {
+	List<Node*> content;
+	GlobalScope(const SourceMeta& sourceMeta, const List<Node*>& content);
+	virtual ~GlobalScope();
 };
 
 struct TypeRef : public Node {
@@ -163,13 +186,14 @@ struct LiteralExpression : public Expression {
 struct Parameter;
 struct FunctionBlock;
 
-struct LambdaExpression : public Expression {
+struct LambdaExpression : public Expression, public Scope {
 	List<Token*> modifiers;	 // For things like "async"
 	List<Parameter*> parameters;
-	FunctionBlock* block;
+	List<Node*> content;
 	LambdaExpression(const SourceMeta& sourceMeta,
 					 const List<Token*>& modifiers,
-					 const List<Parameter*>& parameters, FunctionBlock* block);
+					 const List<Parameter*>& parameters,
+					 const List<Node*>& content, Scope* parentScope);
 	virtual ~LambdaExpression();
 };
 
@@ -186,26 +210,26 @@ struct Parameter : public Symbol {
 	virtual ~Parameter();
 };
 
-struct FunctionBlock : public Node {
+struct FunctionBlock : public Node, public Scope {
 	List<Token*> modifiers;	 // For things like "unsafe" blocks
 	List<Node*> content;
 	FunctionBlock(const SourceMeta& sourceMeta, const List<Token*>& modifiers,
-				  const List<Node*>& content);
+				  const List<Node*>& content, Scope* parentScope);
 	virtual ~FunctionBlock();
 };
 
 struct GenericType;
 
-struct Function : public Symbol {
+struct Function : public Symbol, public Scope {
 	List<Token*> modifiers;
 	List<GenericType*> generics;
 	List<Parameter*> parameters;
 	TypeRef* declaredReturnType;
-	FunctionBlock* block;
+	List<Node*> content;
 	Function(const List<Token*>& modifiers, Token* id,
 			 const List<GenericType*>& generics,
 			 const List<Parameter*>& parameters, TypeRef* declaredReturnType,
-			 FunctionBlock* block);
+			 const List<Node*>& content, Scope* parentScope);
 	virtual ~Function();
 };
 
@@ -324,12 +348,13 @@ struct Alias : public Type {
 	virtual ~Alias();
 };
 
-struct SetBlock : public Node {
+struct SetBlock : public Node, public Scope {
 	List<Token*> modifiers;
 	Parameter* parameter;
-	FunctionBlock* block;
+	List<Node*> content;
 	SetBlock(const SourceMeta& sourceMeta, const List<Token*>& modifiers,
-			 Parameter* parameter, FunctionBlock* block);
+			 Parameter* parameter, const List<Node*>& content,
+			 Scope* parentScope);
 	virtual ~SetBlock();
 };
 
@@ -342,72 +367,77 @@ struct VariableBlock : public Node {
 	virtual ~VariableBlock();
 };
 
-struct Class : public Type {
+struct Class : public Type, public Scope {
 	List<Token*> modifiers;
 	TypeRef* declaredParentType;
 	List<TypeRef*> usedTemplates;
 	List<Node*> content;
 	Class(const List<Token*>& modifiers, Token* id,
 		  const List<GenericType*>& generics, TypeRef* declaredParentType,
-		  const List<TypeRef*>& usedTemplates, const List<Node*>& content);
+		  const List<TypeRef*>& usedTemplates, const List<Node*>& content,
+		  Scope* parentScope);
 	virtual ~Class();
 };
 
-struct Struct : public Type {
+struct Struct : public Type, public Scope {
 	List<Token*> modifiers;
 	TypeRef* declaredParentType;
 	List<TypeRef*> usedTemplates;
 	List<Node*> content;
 	Struct(const List<Token*>& modifiers, Token* id,
 		   const List<GenericType*>& generics, TypeRef* declaredParentType,
-		   const List<TypeRef*>& usedTemplates, const List<Node*>& content);
+		   const List<TypeRef*>& usedTemplates, const List<Node*>& content,
+		   Scope* parentScope);
 	virtual ~Struct();
 };
 
-struct Template : public Type {
+struct Template : public Type, public Scope {
 	List<Token*> modifiers;
 	List<TypeRef*> declaredParentTypes;
 	List<Node*> content;
 	Template(const List<Token*>& modifiers, Token* id,
 			 const List<GenericType*>& generics,
 			 const List<TypeRef*>& declaredParentTypes,
-			 const List<Node*>& content);
+			 const List<Node*>& content, Scope* parentScope);
 	virtual ~Template();
 };
 
-struct Enum : public Type {
+struct Enum : public Type, public Scope {
 	List<Token*> modifiers;
 	List<TypeRef*> usedTemplates;
 	List<Node*> content;
 	Enum(const List<Token*>& modifiers, Token* id,
 		 const List<GenericType*>& generics,
-		 const List<TypeRef*>& usedTemplates, const List<Node*>& content);
+		 const List<TypeRef*>& usedTemplates, const List<Node*>& content,
+		 Scope* parentScope);
 	virtual ~Enum();
 };
 
-struct Namespace : public Symbol {
+struct Namespace : public Symbol, public Scope {
 	List<GenericType*> generics;
 	List<Token*> modifiers;
 	List<Node*> content;
 	Namespace(const List<Token*> modifiers, Token* id,
-			  const List<GenericType*>& generics, const List<Node*>& content);
+			  const List<GenericType*>& generics, const List<Node*>& content,
+			  Scope* parentScope);
 	virtual ~Namespace();
 };
 
-struct Constructor : public Symbol {
+struct Constructor : public Symbol, public Scope {
 	List<Token*> modifiers;
 	List<Parameter*> parameters;
-	FunctionBlock* block;
+	List<Node*> content;
 	Constructor(const List<Token*>& modifiers, Token* id,
-				const List<Parameter*>& parameters, FunctionBlock* block);
+				const List<Parameter*>& parameters, const List<Node*>& content,
+				Scope* parentScope);
 	virtual ~Constructor();
 };
 
-struct Destructor : public Node {
+struct Destructor : public Node, public Scope {
 	List<Token*> modifiers;
-	FunctionBlock* block;
+	List<Node*> content;
 	Destructor(const SourceMeta& sourceMeta, List<Token*>& modifiers,
-			   FunctionBlock* block);
+			   const List<Node*>& content, Scope* parentScope);
 	virtual ~Destructor();
 };
 
@@ -438,5 +468,13 @@ struct MetaDeclaration : public Node {
 	Token* content;
 	MetaDeclaration(Token* content);
 	virtual ~MetaDeclaration();
+};
+
+struct WarningMetaDeclaration : public MetaDeclaration {
+	List<Token*> args;
+	Node* target;
+	WarningMetaDeclaration(Token* content, const List<Token*>& args,
+						   Node* target);
+	virtual ~WarningMetaDeclaration();
 };
 }  // namespace acl

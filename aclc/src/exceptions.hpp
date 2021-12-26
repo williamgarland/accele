@@ -11,6 +11,8 @@
 #define ASP_COMMENT_BLOCKS "1.0.4"
 #define ASP_SYMBOLS "1.0.5"
 #define ASP_META_KEYWORDS "1.0.6"
+#define ASP_GLOBAL_SCOPE "1.0.7"
+#define ASP_LINE_TERMINATION "1.0.8"
 
 #define ASP_SOURCE_LOCK_FRONTING "1.1.1"
 

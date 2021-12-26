@@ -536,6 +536,9 @@ TokenType getMetaType(const SourceMeta& sourceMeta, const String& str) {
 	if (str == "@srclock") return TokenType::META_SRCLOCK;
 	if (str == "@laxthrow") return TokenType::META_LAXTHROW;
 	if (str == "@externalinit") return TokenType::META_EXTERNALINIT;
+	if (str == "@deprecated") return TokenType::META_DEPRECATED;
+	if (str == "@enablewarning") return TokenType::META_ENABLEWARNING;
+	if (str == "@disablewarning") return TokenType::META_DISABLEWARNING;
 	throw AclException(ASP_META_KEYWORDS, sourceMeta, "Invalid meta keyword");
 }
 
