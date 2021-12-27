@@ -54,10 +54,13 @@ SuffixTypeRef::~SuffixTypeRef() {
 
 TupleTypeRef::TupleTypeRef(const SourceMeta& sourceMeta,
 						   const List<TypeRef*>& elementTypes)
-	: TypeRef(sourceMeta), elementTypes(elementTypes) {}
+	: TypeRef(sourceMeta),
+	  elementTypes(elementTypes),
+	  deleteElementTypes(true) {}
 
 TupleTypeRef::~TupleTypeRef() {
-	for (auto& c : elementTypes) delete c;
+	if (deleteElementTypes)
+		for (auto& c : elementTypes) delete c;
 }
 
 MapTypeRef::MapTypeRef(const SourceMeta& sourceMeta, TypeRef* keyType,
@@ -188,7 +191,7 @@ LiteralExpression::LiteralExpression(Token* value)
 LiteralExpression::~LiteralExpression() { delete value; }
 
 LambdaExpression::LambdaExpression(const SourceMeta& sourceMeta,
-								   const List<Token*>& modifiers,
+								   const List<Modifier*>& modifiers,
 								   const List<Parameter*>& parameters,
 								   const List<Node*>& content,
 								   Scope* parentScope)
@@ -208,7 +211,7 @@ Symbol::Symbol(Token* id) : Node(id->meta), id(id) {}
 
 Symbol::~Symbol() { delete id; }
 
-Parameter::Parameter(const List<Token*>& modifiers, Token* id,
+Parameter::Parameter(const List<Modifier*>& modifiers, Token* id,
 					 TypeRef* declaredType)
 	: Symbol(id), modifiers(modifiers), declaredType(declaredType) {}
 
@@ -218,7 +221,7 @@ Parameter::~Parameter() {
 }
 
 FunctionBlock::FunctionBlock(const SourceMeta& sourceMeta,
-							 const List<Token*>& modifiers,
+							 const List<Modifier*>& modifiers,
 							 const List<Node*>& content, Scope* parentScope)
 	: Node(sourceMeta),
 	  Scope(parentScope),
@@ -230,7 +233,7 @@ FunctionBlock::~FunctionBlock() {
 	for (auto& c : content) delete c;
 }
 
-Function::Function(const List<Token*>& modifiers, Token* id,
+Function::Function(const List<Modifier*>& modifiers, Token* id,
 				   const List<GenericType*>& generics,
 				   const List<Parameter*>& parameters,
 				   TypeRef* declaredReturnType, const List<Node*>& content,
@@ -251,7 +254,7 @@ Function::~Function() {
 	for (auto& c : content) delete c;
 }
 
-Variable::Variable(const List<Token*>& modifiers, Token* id,
+Variable::Variable(const List<Modifier*>& modifiers, Token* id,
 				   TypeRef* declaredType, Node* value, bool constant)
 	: Symbol(id),
 	  modifiers(modifiers),
@@ -363,7 +366,7 @@ GenericType::GenericType(Token* id, TypeRef* declaredParentType)
 
 GenericType::~GenericType() { delete declaredParentType; }
 
-Alias::Alias(const List<Token*>& modifiers, Token* id,
+Alias::Alias(const List<Modifier*>& modifiers, Token* id,
 			 const List<GenericType*>& generics, TypeRef* value)
 	: Type(id, generics), modifiers(modifiers), value(value) {}
 
@@ -372,9 +375,9 @@ Alias::~Alias() {
 	delete value;
 }
 
-SetBlock::SetBlock(const SourceMeta& sourceMeta, const List<Token*>& modifiers,
-				   Parameter* parameter, const List<Node*>& content,
-				   Scope* parentScope)
+SetBlock::SetBlock(const SourceMeta& sourceMeta,
+				   const List<Modifier*>& modifiers, Parameter* parameter,
+				   const List<Node*>& content, Scope* parentScope)
 	: Node(sourceMeta),
 	  Scope(parentScope),
 	  modifiers(modifiers),
@@ -401,7 +404,7 @@ VariableBlock::~VariableBlock() {
 	delete initBlock;
 }
 
-Class::Class(const List<Token*>& modifiers, Token* id,
+Class::Class(const List<Modifier*>& modifiers, Token* id,
 			 const List<GenericType*>& generics, TypeRef* declaredParentType,
 			 const List<TypeRef*>& usedTemplates, const List<Node*>& content,
 			 Scope* parentScope)
@@ -419,7 +422,7 @@ Class::~Class() {
 	for (auto& c : content) delete c;
 }
 
-Struct::Struct(const List<Token*>& modifiers, Token* id,
+Struct::Struct(const List<Modifier*>& modifiers, Token* id,
 			   const List<GenericType*>& generics, TypeRef* declaredParentType,
 			   const List<TypeRef*>& usedTemplates, const List<Node*>& content,
 			   Scope* parentScope)
@@ -437,7 +440,7 @@ Struct::~Struct() {
 	for (auto& c : content) delete c;
 }
 
-Template::Template(const List<Token*>& modifiers, Token* id,
+Template::Template(const List<Modifier*>& modifiers, Token* id,
 				   const List<GenericType*>& generics,
 				   const List<TypeRef*>& declaredParentTypes,
 				   const List<Node*>& content, Scope* parentScope)
@@ -453,7 +456,7 @@ Template::~Template() {
 	for (auto& c : content) delete c;
 }
 
-Enum::Enum(const List<Token*>& modifiers, Token* id,
+Enum::Enum(const List<Modifier*>& modifiers, Token* id,
 		   const List<GenericType*>& generics,
 		   const List<TypeRef*>& usedTemplates, const List<Node*>& content,
 		   Scope* parentScope)
@@ -469,7 +472,7 @@ Enum::~Enum() {
 	for (auto& c : content) delete c;
 }
 
-Namespace::Namespace(const List<Token*> modifiers, Token* id,
+Namespace::Namespace(const List<Modifier*>& modifiers, Token* id,
 					 const List<GenericType*>& generics,
 					 const List<Node*>& content, Scope* parentScope)
 	: Symbol(id),
@@ -484,7 +487,7 @@ Namespace::~Namespace() {
 	for (auto& c : content) delete c;
 }
 
-Constructor::Constructor(const List<Token*>& modifiers, Token* id,
+Constructor::Constructor(const List<Modifier*>& modifiers, Token* id,
 						 const List<Parameter*>& parameters,
 						 const List<Node*>& content, Scope* parentScope)
 	: Symbol(id),
@@ -499,7 +502,7 @@ Constructor::~Constructor() {
 	for (auto& c : content) delete c;
 }
 
-Destructor::Destructor(const SourceMeta& sourceMeta, List<Token*>& modifiers,
+Destructor::Destructor(const SourceMeta& sourceMeta, List<Modifier*>& modifiers,
 					   const List<Node*>& content, Scope* parentScope)
 	: Node(sourceMeta),
 	  Scope(parentScope),
@@ -511,7 +514,7 @@ Destructor::~Destructor() {
 	for (auto& c : content) delete c;
 }
 
-EnumCase::EnumCase(const List<Token*>& modifiers, Token* id,
+EnumCase::EnumCase(const List<Modifier*>& modifiers, Token* id,
 				   const List<Expression*>& args)
 	: Symbol(id), modifiers(modifiers), args(args) {}
 
@@ -537,10 +540,13 @@ Import::~Import() {
 	for (auto& c : targets) delete c;
 }
 
-MetaDeclaration::MetaDeclaration(Token* content)
-	: Node(content->meta), content(content) {}
+Modifier::Modifier(Token* content) : Node(content->meta), content(content) {}
 
-MetaDeclaration::~MetaDeclaration() { delete content; }
+Modifier::~Modifier() { delete content; }
+
+MetaDeclaration::MetaDeclaration(Token* content) : Modifier(content) {}
+
+MetaDeclaration::~MetaDeclaration() {}
 
 WarningMetaDeclaration::WarningMetaDeclaration(Token* content,
 											   const List<Token*>& args,

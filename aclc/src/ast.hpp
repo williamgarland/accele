@@ -33,6 +33,25 @@ struct Ast {
 	~Ast();
 };
 
+struct Modifier : public Node {
+	Token* content;
+	Modifier(Token* content);
+	virtual ~Modifier();
+};
+
+struct MetaDeclaration : public Modifier {
+	MetaDeclaration(Token* content);
+	virtual ~MetaDeclaration();
+};
+
+struct WarningMetaDeclaration : public MetaDeclaration {
+	List<Token*> args;
+	Node* target;
+	WarningMetaDeclaration(Token* content, const List<Token*>& args,
+						   Node* target);
+	virtual ~WarningMetaDeclaration();
+};
+
 struct GlobalScope : public Node, public Scope {
 	List<Node*> content;
 	GlobalScope(const SourceMeta& sourceMeta, const List<Node*>& content);
@@ -63,6 +82,10 @@ struct SuffixTypeRef : public TypeRef {
 
 struct TupleTypeRef : public TypeRef {
 	List<TypeRef*> elementTypes;
+
+	// This is only used when the parser needs to convert a tuple type ref to a
+	// list of type refs in the parameters of a function type
+	bool deleteElementTypes;
 	TupleTypeRef(const SourceMeta& sourceMeta,
 				 const List<TypeRef*>& elementTypes);
 	virtual ~TupleTypeRef();
@@ -187,11 +210,11 @@ struct Parameter;
 struct FunctionBlock;
 
 struct LambdaExpression : public Expression, public Scope {
-	List<Token*> modifiers;	 // For things like "async"
+	List<Modifier*> modifiers;	// For things like "async"
 	List<Parameter*> parameters;
 	List<Node*> content;
 	LambdaExpression(const SourceMeta& sourceMeta,
-					 const List<Token*>& modifiers,
+					 const List<Modifier*>& modifiers,
 					 const List<Parameter*>& parameters,
 					 const List<Node*>& content, Scope* parentScope);
 	virtual ~LambdaExpression();
@@ -204,29 +227,31 @@ struct Symbol : public Node {
 };
 
 struct Parameter : public Symbol {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	TypeRef* declaredType;
-	Parameter(const List<Token*>& modifiers, Token* id, TypeRef* declaredType);
+	Parameter(const List<Modifier*>& modifiers, Token* id,
+			  TypeRef* declaredType);
 	virtual ~Parameter();
 };
 
 struct FunctionBlock : public Node, public Scope {
-	List<Token*> modifiers;	 // For things like "unsafe" blocks
+	List<Modifier*> modifiers;	// For things like "unsafe" blocks
 	List<Node*> content;
-	FunctionBlock(const SourceMeta& sourceMeta, const List<Token*>& modifiers,
-				  const List<Node*>& content, Scope* parentScope);
+	FunctionBlock(const SourceMeta& sourceMeta,
+				  const List<Modifier*>& modifiers, const List<Node*>& content,
+				  Scope* parentScope);
 	virtual ~FunctionBlock();
 };
 
 struct GenericType;
 
 struct Function : public Symbol, public Scope {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	List<GenericType*> generics;
 	List<Parameter*> parameters;
 	TypeRef* declaredReturnType;
 	List<Node*> content;
-	Function(const List<Token*>& modifiers, Token* id,
+	Function(const List<Modifier*>& modifiers, Token* id,
 			 const List<GenericType*>& generics,
 			 const List<Parameter*>& parameters, TypeRef* declaredReturnType,
 			 const List<Node*>& content, Scope* parentScope);
@@ -234,12 +259,12 @@ struct Function : public Symbol, public Scope {
 };
 
 struct Variable : public Symbol {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	bool constant;
 	TypeRef* declaredType;
 	Node* value;  // This is a Node and not an Expression because this could be
 				  // a VariableBlock instead of an Expression
-	Variable(const List<Token*>& modifiers, Token* id, TypeRef* declaredType,
+	Variable(const List<Modifier*>& modifiers, Token* id, TypeRef* declaredType,
 			 Node* value, bool constant);
 	virtual ~Variable();
 };
@@ -341,18 +366,18 @@ struct GenericType : public Type {
 };
 
 struct Alias : public Type {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	TypeRef* value;
-	Alias(const List<Token*>& modifiers, Token* id,
+	Alias(const List<Modifier*>& modifiers, Token* id,
 		  const List<GenericType*>& generics, TypeRef* value);
 	virtual ~Alias();
 };
 
 struct SetBlock : public Node, public Scope {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	Parameter* parameter;
 	List<Node*> content;
-	SetBlock(const SourceMeta& sourceMeta, const List<Token*>& modifiers,
+	SetBlock(const SourceMeta& sourceMeta, const List<Modifier*>& modifiers,
 			 Parameter* parameter, const List<Node*>& content,
 			 Scope* parentScope);
 	virtual ~SetBlock();
@@ -368,11 +393,11 @@ struct VariableBlock : public Node {
 };
 
 struct Class : public Type, public Scope {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	TypeRef* declaredParentType;
 	List<TypeRef*> usedTemplates;
 	List<Node*> content;
-	Class(const List<Token*>& modifiers, Token* id,
+	Class(const List<Modifier*>& modifiers, Token* id,
 		  const List<GenericType*>& generics, TypeRef* declaredParentType,
 		  const List<TypeRef*>& usedTemplates, const List<Node*>& content,
 		  Scope* parentScope);
@@ -380,11 +405,11 @@ struct Class : public Type, public Scope {
 };
 
 struct Struct : public Type, public Scope {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	TypeRef* declaredParentType;
 	List<TypeRef*> usedTemplates;
 	List<Node*> content;
-	Struct(const List<Token*>& modifiers, Token* id,
+	Struct(const List<Modifier*>& modifiers, Token* id,
 		   const List<GenericType*>& generics, TypeRef* declaredParentType,
 		   const List<TypeRef*>& usedTemplates, const List<Node*>& content,
 		   Scope* parentScope);
@@ -392,10 +417,10 @@ struct Struct : public Type, public Scope {
 };
 
 struct Template : public Type, public Scope {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	List<TypeRef*> declaredParentTypes;
 	List<Node*> content;
-	Template(const List<Token*>& modifiers, Token* id,
+	Template(const List<Modifier*>& modifiers, Token* id,
 			 const List<GenericType*>& generics,
 			 const List<TypeRef*>& declaredParentTypes,
 			 const List<Node*>& content, Scope* parentScope);
@@ -403,10 +428,10 @@ struct Template : public Type, public Scope {
 };
 
 struct Enum : public Type, public Scope {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	List<TypeRef*> usedTemplates;
 	List<Node*> content;
-	Enum(const List<Token*>& modifiers, Token* id,
+	Enum(const List<Modifier*>& modifiers, Token* id,
 		 const List<GenericType*>& generics,
 		 const List<TypeRef*>& usedTemplates, const List<Node*>& content,
 		 Scope* parentScope);
@@ -415,36 +440,36 @@ struct Enum : public Type, public Scope {
 
 struct Namespace : public Symbol, public Scope {
 	List<GenericType*> generics;
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	List<Node*> content;
-	Namespace(const List<Token*> modifiers, Token* id,
+	Namespace(const List<Modifier*>& modifiers, Token* id,
 			  const List<GenericType*>& generics, const List<Node*>& content,
 			  Scope* parentScope);
 	virtual ~Namespace();
 };
 
 struct Constructor : public Symbol, public Scope {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	List<Parameter*> parameters;
 	List<Node*> content;
-	Constructor(const List<Token*>& modifiers, Token* id,
+	Constructor(const List<Modifier*>& modifiers, Token* id,
 				const List<Parameter*>& parameters, const List<Node*>& content,
 				Scope* parentScope);
 	virtual ~Constructor();
 };
 
 struct Destructor : public Node, public Scope {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	List<Node*> content;
-	Destructor(const SourceMeta& sourceMeta, List<Token*>& modifiers,
+	Destructor(const SourceMeta& sourceMeta, List<Modifier*>& modifiers,
 			   const List<Node*>& content, Scope* parentScope);
 	virtual ~Destructor();
 };
 
 struct EnumCase : public Symbol {
-	List<Token*> modifiers;
+	List<Modifier*> modifiers;
 	List<Expression*> args;
-	EnumCase(const List<Token*>& modifiers, Token* id,
+	EnumCase(const List<Modifier*>& modifiers, Token* id,
 			 const List<Expression*>& args);
 	virtual ~EnumCase();
 };
@@ -462,19 +487,5 @@ struct Import : public Node {
 	List<ImportTarget*> targets;
 	Import(Token* source, Token* alias, const List<ImportTarget*>& targets);
 	virtual ~Import();
-};
-
-struct MetaDeclaration : public Node {
-	Token* content;
-	MetaDeclaration(Token* content);
-	virtual ~MetaDeclaration();
-};
-
-struct WarningMetaDeclaration : public MetaDeclaration {
-	List<Token*> args;
-	Node* target;
-	WarningMetaDeclaration(Token* content, const List<Token*>& args,
-						   Node* target);
-	virtual ~WarningMetaDeclaration();
 };
 }  // namespace acl

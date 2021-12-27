@@ -29,6 +29,10 @@ class Parser {
 	void sync(int pos);
 	void fill(int n);
 
+	// Relex the current token and be as conservative as possible, meaning that
+	// if only one character can be a token, it will be matched as such.
+	Token* relex();
+
    public:
 	Parser(CompilerContext& ctx, Lexer&& lexer);
 	~Parser();
@@ -48,6 +52,21 @@ class Parser {
 	Import* parseImport();
 	MetaDeclaration* parseSourceLock(const List<Node*>& globalContent);
 
+	TypeRef* parseTypeRef();
+	Expression* parseExpression();
+
+	void parseModifiers(const TokenType types[], List<Modifier*>& dest);
+	WarningMetaDeclaration* parseWarningMetaModifier();
+	void parseParameters(List<Parameter*>& dest);
+	void parseGenerics(List<GenericType*>& dest);
+	void parseFunctionBlockContent(List<Node*>& dest);
+	TypeRef* parseTypeBase();
+	TypeRef* parseTypeSuffix(TypeRef* base);
+	SimpleTypeRef* parseSimpleTypeBase(SimpleTypeRef* parent);
+	void parseGenericImpl(List<TypeRef*>& dest);
+	FunctionTypeRef* parseFunctionTypeRef(TypeRef* parameters);
+	TypeRef* parseSubscriptTypeRef(TypeRef* base);
+
 	/*
 	Parses the next newline (or equivalent) token.
 	If the next token is a newline or a semicolon, the token will be advanced
@@ -61,4 +80,6 @@ class Parser {
 
 bool isModifier(TokenType type);
 bool isNewlineEquivalent(TokenType type);
+bool isTypeSuffixStart(TokenType type);
+bool isGenericsStart(TokenType type);
 }  // namespace acl
