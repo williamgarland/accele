@@ -25,23 +25,20 @@ struct Node {
 	SourceMeta sourceMeta;
 	Node(const SourceMeta& sourceMeta);
 	virtual ~Node();
-};
-
-struct Ast {
-	GlobalScope* globalScope;
-	Ast(GlobalScope* globalScope);
-	~Ast();
+	virtual void toJson(StringBuffer& dest) const = 0;
 };
 
 struct Modifier : public Node {
 	Token* content;
 	Modifier(Token* content);
 	virtual ~Modifier();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct MetaDeclaration : public Modifier {
 	MetaDeclaration(Token* content);
 	virtual ~MetaDeclaration();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct WarningMetaDeclaration : public MetaDeclaration {
@@ -50,12 +47,14 @@ struct WarningMetaDeclaration : public MetaDeclaration {
 	WarningMetaDeclaration(Token* content, const List<Token*>& args,
 						   Node* target);
 	virtual ~WarningMetaDeclaration();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct GlobalScope : public Node, public Scope {
 	List<Node*> content;
 	GlobalScope(const SourceMeta& sourceMeta, const List<Node*>& content);
 	virtual ~GlobalScope();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct TypeRef : public Node {
@@ -70,6 +69,7 @@ struct SimpleTypeRef : public TypeRef {
 	SimpleTypeRef(const SourceMeta& sourceMeta, Token* id,
 				  const List<TypeRef*>& generics, SimpleTypeRef* parent);
 	virtual ~SimpleTypeRef();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct SuffixTypeRef : public TypeRef {
@@ -78,6 +78,7 @@ struct SuffixTypeRef : public TypeRef {
 	SuffixTypeRef(const SourceMeta& sourceMeta, TypeRef* type,
 				  Token* suffixSymbol);
 	virtual ~SuffixTypeRef();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct TupleTypeRef : public TypeRef {
@@ -89,6 +90,7 @@ struct TupleTypeRef : public TypeRef {
 	TupleTypeRef(const SourceMeta& sourceMeta,
 				 const List<TypeRef*>& elementTypes);
 	virtual ~TupleTypeRef();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct MapTypeRef : public TypeRef {
@@ -97,12 +99,14 @@ struct MapTypeRef : public TypeRef {
 	MapTypeRef(const SourceMeta& sourceMeta, TypeRef* keyType,
 			   TypeRef* valueType);
 	virtual ~MapTypeRef();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct ArrayTypeRef : public TypeRef {
 	TypeRef* elementType;
 	ArrayTypeRef(const SourceMeta& sourceMeta, TypeRef* elementType);
 	virtual ~ArrayTypeRef();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct FunctionTypeRef : public TypeRef {
@@ -111,6 +115,7 @@ struct FunctionTypeRef : public TypeRef {
 	FunctionTypeRef(const SourceMeta& sourceMeta,
 					const List<TypeRef*>& paramTypes, TypeRef* returnType);
 	virtual ~FunctionTypeRef();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Expression : public Node {
@@ -125,6 +130,7 @@ struct TernaryExpression : public Expression {
 	TernaryExpression(const SourceMeta& sourceMeta, Expression* arg0,
 					  Expression* arg1, Expression* arg2);
 	virtual ~TernaryExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct BinaryExpression : public Expression {
@@ -134,6 +140,7 @@ struct BinaryExpression : public Expression {
 	BinaryExpression(const SourceMeta& sourceMeta, Token* op, Expression* left,
 					 Expression* right);
 	virtual ~BinaryExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct UnaryPrefixExpression : public Expression {
@@ -142,6 +149,7 @@ struct UnaryPrefixExpression : public Expression {
 	UnaryPrefixExpression(const SourceMeta& sourceMeta, Token* op,
 						  Expression* arg);
 	virtual ~UnaryPrefixExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct UnaryPostfixExpression : public Expression {
@@ -150,6 +158,7 @@ struct UnaryPostfixExpression : public Expression {
 	UnaryPostfixExpression(const SourceMeta& sourceMeta, Token* op,
 						   Expression* arg);
 	virtual ~UnaryPostfixExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct FunctionCallExpression : public Expression {
@@ -158,6 +167,7 @@ struct FunctionCallExpression : public Expression {
 	FunctionCallExpression(const SourceMeta& sourceMeta, Expression* caller,
 						   List<Expression*> args);
 	virtual ~FunctionCallExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct SubscriptExpression : public Expression {
@@ -166,6 +176,7 @@ struct SubscriptExpression : public Expression {
 	SubscriptExpression(const SourceMeta& sourceMeta, Expression* target,
 						Expression* index);
 	virtual ~SubscriptExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct CastingExpression : public Expression {
@@ -175,6 +186,7 @@ struct CastingExpression : public Expression {
 	CastingExpression(const SourceMeta& sourceMeta, Token* op, Expression* left,
 					  TypeRef* right);
 	virtual ~CastingExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct MapLiteralExpression : public Expression {
@@ -184,6 +196,7 @@ struct MapLiteralExpression : public Expression {
 						 const List<Expression*>& keys,
 						 const List<Expression*>& values);
 	virtual ~MapLiteralExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct ArrayLiteralExpression : public Expression {
@@ -191,6 +204,7 @@ struct ArrayLiteralExpression : public Expression {
 	ArrayLiteralExpression(const SourceMeta& sourceMeta,
 						   const List<Expression*>& elements);
 	virtual ~ArrayLiteralExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct TupleLiteralExpression : public Expression {
@@ -198,12 +212,24 @@ struct TupleLiteralExpression : public Expression {
 	TupleLiteralExpression(const SourceMeta& sourceMeta,
 						   const List<Expression*>& elements);
 	virtual ~TupleLiteralExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct LiteralExpression : public Expression {
 	Token* value;
 	LiteralExpression(Token* value);
 	virtual ~LiteralExpression();
+	virtual void toJson(StringBuffer& dest) const override;
+};
+
+struct IdentifierExpression : public Expression {
+	Token* value;
+	List<TypeRef*> generics;
+	bool globalPrefix;
+	IdentifierExpression(Token* value, const List<TypeRef*>& generics,
+						 bool globalPrefix);
+	virtual ~IdentifierExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Parameter;
@@ -218,6 +244,7 @@ struct LambdaExpression : public Expression, public Scope {
 					 const List<Parameter*>& parameters,
 					 const List<Node*>& content, Scope* parentScope);
 	virtual ~LambdaExpression();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Symbol : public Node {
@@ -232,6 +259,7 @@ struct Parameter : public Symbol {
 	Parameter(const List<Modifier*>& modifiers, Token* id,
 			  TypeRef* declaredType);
 	virtual ~Parameter();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct FunctionBlock : public Node, public Scope {
@@ -241,6 +269,7 @@ struct FunctionBlock : public Node, public Scope {
 				  const List<Modifier*>& modifiers, const List<Node*>& content,
 				  Scope* parentScope);
 	virtual ~FunctionBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct GenericType;
@@ -256,6 +285,7 @@ struct Function : public Symbol, public Scope {
 			 const List<Parameter*>& parameters, TypeRef* declaredReturnType,
 			 const List<Node*>& content, Scope* parentScope);
 	virtual ~Function();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Variable : public Symbol {
@@ -267,6 +297,7 @@ struct Variable : public Symbol {
 	Variable(const List<Modifier*>& modifiers, Token* id, TypeRef* declaredType,
 			 Node* value, bool constant);
 	virtual ~Variable();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct ConditionalBlock : public Node {
@@ -275,6 +306,7 @@ struct ConditionalBlock : public Node {
 	ConditionalBlock(const SourceMeta& sourceMeta, Expression* condition,
 					 FunctionBlock* block);
 	virtual ~ConditionalBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct IfBlock : public ConditionalBlock {
@@ -284,18 +316,21 @@ struct IfBlock : public ConditionalBlock {
 			FunctionBlock* block, const List<ConditionalBlock*>& elifBlocks,
 			FunctionBlock* elseBlock);
 	virtual ~IfBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct WhileBlock : public ConditionalBlock {
 	WhileBlock(const SourceMeta& sourceMeta, Expression* condition,
 			   FunctionBlock* block);
 	virtual ~WhileBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct RepeatBlock : public ConditionalBlock {
 	RepeatBlock(const SourceMeta& sourceMeta, Expression* condition,
 				FunctionBlock* block);
 	virtual ~RepeatBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct CatchBlock : public Node {
@@ -304,6 +339,7 @@ struct CatchBlock : public Node {
 	CatchBlock(const SourceMeta& sourceMeta, Parameter* exceptionVariable,
 			   FunctionBlock* block);
 	virtual ~CatchBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct TryBlock : public Node {
@@ -312,6 +348,7 @@ struct TryBlock : public Node {
 	TryBlock(const SourceMeta& sourceMeta, FunctionBlock* block,
 			 const List<CatchBlock*>& catchBlocks);
 	virtual ~TryBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct SwitchCaseBlock : public Node {
@@ -320,6 +357,7 @@ struct SwitchCaseBlock : public Node {
 	SwitchCaseBlock(const SourceMeta& sourceMeta, Token* caseType,
 					FunctionBlock* block);
 	virtual ~SwitchCaseBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct SwitchBlock : public Node {
@@ -328,24 +366,28 @@ struct SwitchBlock : public Node {
 	SwitchBlock(const SourceMeta& sourceMeta, Expression* condition,
 				const List<SwitchCaseBlock*>& cases);
 	virtual ~SwitchBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct ReturnStatement : public Node {
 	Expression* value;
 	ReturnStatement(const SourceMeta& sourceMeta, Expression* value);
 	virtual ~ReturnStatement();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct ThrowStatement : public Node {
 	Expression* value;
 	ThrowStatement(const SourceMeta& sourceMeta, Expression* value);
 	virtual ~ThrowStatement();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct SingleTokenStatement : public Node {
 	Token* content;
 	SingleTokenStatement(Token* content);
 	virtual ~SingleTokenStatement();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct GenericType;
@@ -363,6 +405,7 @@ struct GenericType : public Type {
 	// therefore it does not accept the list of generic types
 	GenericType(Token* id, TypeRef* declaredParentType);
 	virtual ~GenericType();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Alias : public Type {
@@ -371,6 +414,7 @@ struct Alias : public Type {
 	Alias(const List<Modifier*>& modifiers, Token* id,
 		  const List<GenericType*>& generics, TypeRef* value);
 	virtual ~Alias();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct SetBlock : public Node, public Scope {
@@ -381,6 +425,7 @@ struct SetBlock : public Node, public Scope {
 			 Parameter* parameter, const List<Node*>& content,
 			 Scope* parentScope);
 	virtual ~SetBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct VariableBlock : public Node {
@@ -390,6 +435,7 @@ struct VariableBlock : public Node {
 	VariableBlock(const SourceMeta& sourceMeta, FunctionBlock* getBlock,
 				  SetBlock* setBlock, FunctionBlock* initBlock);
 	virtual ~VariableBlock();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Class : public Type, public Scope {
@@ -402,6 +448,7 @@ struct Class : public Type, public Scope {
 		  const List<TypeRef*>& usedTemplates, const List<Node*>& content,
 		  Scope* parentScope);
 	virtual ~Class();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Struct : public Type, public Scope {
@@ -414,6 +461,7 @@ struct Struct : public Type, public Scope {
 		   const List<TypeRef*>& usedTemplates, const List<Node*>& content,
 		   Scope* parentScope);
 	virtual ~Struct();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Template : public Type, public Scope {
@@ -425,6 +473,7 @@ struct Template : public Type, public Scope {
 			 const List<TypeRef*>& declaredParentTypes,
 			 const List<Node*>& content, Scope* parentScope);
 	virtual ~Template();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Enum : public Type, public Scope {
@@ -436,6 +485,7 @@ struct Enum : public Type, public Scope {
 		 const List<TypeRef*>& usedTemplates, const List<Node*>& content,
 		 Scope* parentScope);
 	virtual ~Enum();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Namespace : public Symbol, public Scope {
@@ -446,6 +496,7 @@ struct Namespace : public Symbol, public Scope {
 			  const List<GenericType*>& generics, const List<Node*>& content,
 			  Scope* parentScope);
 	virtual ~Namespace();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Constructor : public Symbol, public Scope {
@@ -456,6 +507,7 @@ struct Constructor : public Symbol, public Scope {
 				const List<Parameter*>& parameters, const List<Node*>& content,
 				Scope* parentScope);
 	virtual ~Constructor();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Destructor : public Node, public Scope {
@@ -464,6 +516,7 @@ struct Destructor : public Node, public Scope {
 	Destructor(const SourceMeta& sourceMeta, List<Modifier*>& modifiers,
 			   const List<Node*>& content, Scope* parentScope);
 	virtual ~Destructor();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct EnumCase : public Symbol {
@@ -472,6 +525,7 @@ struct EnumCase : public Symbol {
 	EnumCase(const List<Modifier*>& modifiers, Token* id,
 			 const List<Expression*>& args);
 	virtual ~EnumCase();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct ImportTarget : public Node {
@@ -479,6 +533,7 @@ struct ImportTarget : public Node {
 	TypeRef* declaredType;
 	ImportTarget(Token* id, TypeRef* declaredType);
 	virtual ~ImportTarget();
+	virtual void toJson(StringBuffer& dest) const override;
 };
 
 struct Import : public Node {
@@ -487,5 +542,12 @@ struct Import : public Node {
 	List<ImportTarget*> targets;
 	Import(Token* source, Token* alias, const List<ImportTarget*>& targets);
 	virtual ~Import();
+	virtual void toJson(StringBuffer& dest) const override;
+};
+
+struct Ast {
+	GlobalScope* globalScope;
+	Ast(GlobalScope* globalScope);
+	~Ast();
 };
 }  // namespace acl

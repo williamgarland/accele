@@ -1,32 +1,54 @@
-#include "lexer.hpp"
+#include <cstring>
 #include <fstream>
 #include <iostream>
 
+#include "lexer.hpp"
+#include "parser.hpp"
+
+void generateAstJson(const acl::Ast* ast, const acl::String& dest) {
+	std::ofstream ofs(dest);
+	if (ofs) {
+		acl::StringBuffer json;
+		ast->globalScope->toJson(json);
+		acl::String asString = json.str();
+		ofs << asString;
+	} else
+		throw "Expected output destination following AST generation flag";
+}
+
+void checkForAstOutputFlag(int argc, char* argv[], const acl::Ast* ast) {
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "--genAstJson") == 0) {
+			if (i + 1 >= argc)
+				throw "Expected output destination following AST generation flag";
+			generateAstJson(ast, argv[i + 1]);
+		}
+	}
+}
+
 int main(int argc, char* argv[]) {
-    using namespace acl;
+	using namespace acl;
 
-    if (argc < 2)
-        return 1;
+	if (argc < 2) return 1;
 
-    String file = String(argv[1]);
+	String file = String(argv[1]);
 
-    std::ifstream ifs(file);
+	std::ifstream ifs(file);
 
-    if (ifs) {
-        StringBuffer buf;
-        buf << ifs.rdbuf();
-        ifs.close();
+	if (ifs) {
+		StringBuffer buf;
+		buf << ifs.rdbuf();
+		ifs.close();
 
-        Lexer lexer(file, buf);
+		CompilerContext ctx;
+		Parser parser(ctx, Lexer(file, buf));
 
-        while (lexer.hasNext()) {
-            auto t = lexer.nextToken();
+		auto ast = parser.parse();
 
-            std::cout << "[" << (int) t->type << " @ " << t->meta.line << ":" << t->meta.col << "]: " << t->data << "\n";
+		checkForAstOutputFlag(argc, argv, ast);
 
-            delete t;
-        }
-    }
+		delete ast;
+	}
 
-    return 0;
+	return 0;
 }

@@ -465,6 +465,7 @@ TokenType getIdentifierType(const String& str) {
 	if (str == "extern") return TokenType::EXTERN;
 	if (str == "fall") return TokenType::FALL;
 	if (str == "global") return TokenType::GLOBAL;
+	if (str == "is") return TokenType::IS;
 
 	return TokenType::ID;
 }

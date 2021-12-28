@@ -71,6 +71,7 @@ enum class TokenType {
 	EXTERN,
 	FALL,
 	GLOBAL,
+	IS,
 
 	// ----- Symbols ----- //
 	TILDE,
