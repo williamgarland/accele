@@ -25,5 +25,6 @@ struct SourceMeta {
 // compilation process.
 struct CompilerContext {
 	Map<String, bool> warnings;
+	CompilerContext();
 };
 }  // namespace acl

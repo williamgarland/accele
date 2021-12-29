@@ -40,36 +40,72 @@ class Parser {
 	Ast* parse();
 
    private:
-	Function* parseGlobalFunction();
-	WarningMetaDeclaration* parseWarningMeta();
-	Variable* parseGlobalVariable();
-	Variable* parseGlobalConstant();
-	Alias* parseGlobalAlias();
-	Class* parseGlobalClass();
-	Struct* parseGlobalStruct();
-	Template* parseGlobalTemplate();
-	Enum* parseGlobalEnum();
-	Namespace* parseGlobalNamespace();
+	Function* parseFunction(const TokenType* modifiersArray, int modifiersLen);
+	WarningMetaDeclaration* parseGlobalWarningMeta();
+	Variable* parseNonClassVariable(const TokenType* modifiersArray,
+									int modifiersLen);
+	Variable* parseNonClassConstant(const TokenType* modifiersArray,
+									int modifiersLen);
+	Alias* parseAlias(const TokenType* modifiersArray, int modifiersLen);
+	Class* parseClass(const TokenType* modifiersArray, int modifiersLen);
+	Struct* parseStruct(const TokenType* modifiersArray, int modifiersLen);
+	Template* parseTemplate(const TokenType* modifiersArray, int modifiersLen);
+	Enum* parseEnum(const TokenType* modifiersArray, int modifiersLen);
+	Namespace* parseNamespace(const TokenType* modifiersArray,
+							  int modifiersLen);
+	void parseClassContent(List<Node*>& dest);
+	void parseTemplateContent(List<Node*>& dest);
+	void parseEnumContent(List<Node*>& dest);
+	void parseNamespaceContent(List<Node*>& dest);
+	Variable* parseClassVariable();
+	Variable* parseClassConstant();
+	VariableBlock* parseVariableBlock(const SourceMeta& meta);
+	FunctionBlock* parseGetBlock();
+	SetBlock* parseSetBlock();
+	FunctionBlock* parseInitBlock();
+	Constructor* parseConstructor();
+	Destructor* parseDestructor();
+	Variable* parseTemplateVariable();
+	Variable* parseTemplateConstant();
+	EnumCase* parseEnumCase();
 	Import* parseImport();
+	Import* parseStandardImport();
+	Import* parseFromImport();
+	ImportSource* parseImportSource();
+	ImportTarget* parseImportTarget();
 	MetaDeclaration* parseSourceLock(const List<Node*>& globalContent);
-
+	Node* parseGlobalContent();
 	TypeRef* parseTypeRef();
 	Expression* parseExpression();
-
 	void parseModifiers(const TokenType* types, int typesLen,
 						List<Modifier*>& dest);
 	WarningMetaDeclaration* parseWarningMetaModifier();
 	void parseParameters(List<Parameter*>& dest);
 	Parameter* parseParameter();
 	void parseGenerics(List<GenericType*>& dest);
+	GenericType* parseGenericType();
+	FunctionBlock* parseFunctionBlock();
 	void parseFunctionBlockContent(List<Node*>& dest);
+	Node* parseSingleFunctionBlockContent();
+	IfBlock* parseIfBlock();
+	WhileBlock* parseWhileBlock();
+	RepeatBlock* parseRepeatBlock();
+	ForBlock* parseForBlock();
+	SwitchBlock* parseSwitchBlock();
+	void parseSwitchBlockCases(List<SwitchCaseBlock*>& dest);
+	TryBlock* parseTryBlock();
+	CatchBlock* parseCatchBlock();
+	Variable* parseLocalVariable();
+	Variable* parseLocalConstant();
+	ThrowStatement* parseThrowStatement();
+	ReturnStatement* parseReturnStatement();
+	WarningMetaDeclaration* parseLocalWarningMeta();
 	TypeRef* parseTypeBase();
 	TypeRef* parseTypeSuffix(TypeRef* base);
 	SimpleTypeRef* parseSimpleTypeBase(SimpleTypeRef* parent);
 	void parseGenericImpl(List<TypeRef*>& dest);
 	FunctionTypeRef* parseFunctionTypeRef(TypeRef* parameters);
 	TypeRef* parseSubscriptTypeRef(TypeRef* base);
-
 	Expression* parseAssignmentExpression();
 	Expression* parseL2Expression();
 	Expression* parseLambdaExpression();

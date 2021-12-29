@@ -15,11 +15,381 @@ const acl::TokenType GLOBAL_FUNCTION_MODIFIERS[GLOBAL_FUNCTION_MODIFIERS_LEN] =
 	 acl::TokenType::META_DEPRECATED,
 	 acl::TokenType::META_ENABLEWARNING,
 	 acl::TokenType::META_DISABLEWARNING};
-};	// namespace
 
 constexpr int LAMBDA_MODIFIERS_LEN = 2;
 const acl::TokenType LAMBDA_MODIFIERS[LAMBDA_MODIFIERS_LEN] = {
 	acl::TokenType::ASYNC, acl::TokenType::UNSAFE};
+
+constexpr int GLOBAL_VARIABLE_MODIFIERS_LEN = 9;
+const acl::TokenType GLOBAL_VARIABLE_MODIFIERS[GLOBAL_VARIABLE_MODIFIERS_LEN] =
+	{acl::TokenType::INTERNAL,
+	 acl::TokenType::ATOMIC,
+	 acl::TokenType::GREEDY,
+	 acl::TokenType::STRONG,
+	 acl::TokenType::WEAK,
+	 acl::TokenType::UNSAFE,
+	 acl::TokenType::META_DEPRECATED,
+	 acl::TokenType::META_ENABLEWARNING,
+	 acl::TokenType::META_DISABLEWARNING};
+
+constexpr int GLOBAL_ALIAS_MODIFIERS_LEN = 4;
+const acl::TokenType GLOBAL_ALIAS_MODIFIERS[GLOBAL_ALIAS_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL, acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING, acl::TokenType::META_DISABLEWARNING};
+
+constexpr int PARAMETER_MODIFIERS_LEN = 8;
+const acl::TokenType PARAMETER_MODIFIERS[PARAMETER_MODIFIERS_LEN] = {
+	acl::TokenType::ATOMIC,
+	acl::TokenType::GREEDY,
+	acl::TokenType::STRONG,
+	acl::TokenType::WEAK,
+	acl::TokenType::REF,
+	acl::TokenType::CONST,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING};
+
+constexpr int FUNCTION_BLOCK_MODIFIERS_LEN = 3;
+const acl::TokenType FUNCTION_BLOCK_MODIFIERS[FUNCTION_BLOCK_MODIFIERS_LEN] = {
+	acl::TokenType::UNSAFE, acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING};
+
+constexpr int LOCAL_VARIABLE_MODIFIERS_LEN = 8;
+const acl::TokenType LOCAL_VARIABLE_MODIFIERS[LOCAL_VARIABLE_MODIFIERS_LEN] = {
+	acl::TokenType::REF,
+	acl::TokenType::ATOMIC,
+	acl::TokenType::GREEDY,
+	acl::TokenType::STRONG,
+	acl::TokenType::WEAK,
+	acl::TokenType::UNSAFE,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING};
+
+constexpr int LOCAL_ALIAS_MODIFIERS_LEN = 2;
+const acl::TokenType LOCAL_ALIAS_MODIFIERS[LOCAL_ALIAS_MODIFIERS_LEN] = {
+	acl::TokenType::META_ENABLEWARNING, acl::TokenType::META_DISABLEWARNING};
+
+constexpr int GLOBAL_CLASS_MODIFIERS_LEN = 6;
+const acl::TokenType GLOBAL_CLASS_MODIFIERS[GLOBAL_CLASS_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,			acl::TokenType::FINAL,
+	acl::TokenType::META_LAXTHROW,		acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING, acl::TokenType::META_DISABLEWARNING};
+
+constexpr int GLOBAL_STRUCT_MODIFIERS_LEN = 5;
+const acl::TokenType GLOBAL_STRUCT_MODIFIERS[GLOBAL_STRUCT_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL, acl::TokenType::META_LAXTHROW,
+	acl::TokenType::META_DEPRECATED, acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING};
+
+constexpr int GLOBAL_TEMPLATE_MODIFIERS_LEN = 4;
+const acl::TokenType GLOBAL_TEMPLATE_MODIFIERS[GLOBAL_TEMPLATE_MODIFIERS_LEN] =
+	{acl::TokenType::INTERNAL, acl::TokenType::META_DEPRECATED,
+	 acl::TokenType::META_ENABLEWARNING, acl::TokenType::META_DISABLEWARNING};
+
+constexpr int GLOBAL_ENUM_MODIFIERS_LEN = 4;
+const acl::TokenType GLOBAL_ENUM_MODIFIERS[GLOBAL_ENUM_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL, acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING, acl::TokenType::META_DISABLEWARNING};
+
+constexpr int GLOBAL_NAMESPACE_MODIFIERS_LEN = 4;
+const acl::TokenType
+	GLOBAL_NAMESPACE_MODIFIERS[GLOBAL_NAMESPACE_MODIFIERS_LEN] = {
+		acl::TokenType::INTERNAL, acl::TokenType::META_DEPRECATED,
+		acl::TokenType::META_ENABLEWARNING,
+		acl::TokenType::META_DISABLEWARNING};
+
+constexpr int CLASS_CLASS_MODIFIERS_LEN = 9;
+const acl::TokenType CLASS_CLASS_MODIFIERS[CLASS_CLASS_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::FINAL,
+	acl::TokenType::META_LAXTHROW,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED};
+
+constexpr int CLASS_STRUCT_MODIFIERS_LEN = 8;
+const acl::TokenType CLASS_STRUCT_MODIFIERS[CLASS_STRUCT_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::META_LAXTHROW,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED};
+
+constexpr int CLASS_TEMPLATE_MODIFIERS_LEN = 7;
+const acl::TokenType CLASS_TEMPLATE_MODIFIERS[CLASS_TEMPLATE_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED};
+
+constexpr int CLASS_ENUM_MODIFIERS_LEN = 7;
+const acl::TokenType CLASS_ENUM_MODIFIERS[CLASS_ENUM_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED};
+
+constexpr int CLASS_NAMESPACE_MODIFIERS_LEN = 7;
+const acl::TokenType CLASS_NAMESPACE_MODIFIERS[CLASS_NAMESPACE_MODIFIERS_LEN] =
+	{acl::TokenType::INTERNAL,
+	 acl::TokenType::META_DEPRECATED,
+	 acl::TokenType::META_ENABLEWARNING,
+	 acl::TokenType::META_DISABLEWARNING,
+	 acl::TokenType::PUBLIC,
+	 acl::TokenType::PRIVATE,
+	 acl::TokenType::PROTECTED};
+
+constexpr int NAMESPACE_CLASS_MODIFIERS_LEN = 8;
+const acl::TokenType NAMESPACE_CLASS_MODIFIERS[NAMESPACE_CLASS_MODIFIERS_LEN] =
+	{acl::TokenType::INTERNAL,
+	 acl::TokenType::FINAL,
+	 acl::TokenType::META_LAXTHROW,
+	 acl::TokenType::META_DEPRECATED,
+	 acl::TokenType::META_ENABLEWARNING,
+	 acl::TokenType::META_DISABLEWARNING,
+	 acl::TokenType::PUBLIC,
+	 acl::TokenType::PRIVATE};
+
+constexpr int NAMESPACE_STRUCT_MODIFIERS_LEN = 7;
+const acl::TokenType
+	NAMESPACE_STRUCT_MODIFIERS[NAMESPACE_STRUCT_MODIFIERS_LEN] = {
+		acl::TokenType::INTERNAL,
+		acl::TokenType::META_LAXTHROW,
+		acl::TokenType::META_DEPRECATED,
+		acl::TokenType::META_ENABLEWARNING,
+		acl::TokenType::META_DISABLEWARNING,
+		acl::TokenType::PUBLIC,
+		acl::TokenType::PRIVATE};
+
+constexpr int NAMESPACE_TEMPLATE_MODIFIERS_LEN = 6;
+const acl::TokenType
+	NAMESPACE_TEMPLATE_MODIFIERS[NAMESPACE_TEMPLATE_MODIFIERS_LEN] = {
+		acl::TokenType::INTERNAL,
+		acl::TokenType::META_DEPRECATED,
+		acl::TokenType::META_ENABLEWARNING,
+		acl::TokenType::META_DISABLEWARNING,
+		acl::TokenType::PUBLIC,
+		acl::TokenType::PRIVATE};
+
+constexpr int NAMESPACE_ENUM_MODIFIERS_LEN = 6;
+const acl::TokenType NAMESPACE_ENUM_MODIFIERS[NAMESPACE_ENUM_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE};
+
+constexpr int NAMESPACE_NAMESPACE_MODIFIERS_LEN = 6;
+const acl::TokenType
+	NAMESPACE_NAMESPACE_MODIFIERS[NAMESPACE_NAMESPACE_MODIFIERS_LEN] = {
+		acl::TokenType::INTERNAL,
+		acl::TokenType::META_DEPRECATED,
+		acl::TokenType::META_ENABLEWARNING,
+		acl::TokenType::META_DISABLEWARNING,
+		acl::TokenType::PUBLIC,
+		acl::TokenType::PRIVATE};
+
+constexpr int CLASS_VARIABLE_MODIFIERS_LEN = 13;
+const acl::TokenType CLASS_VARIABLE_MODIFIERS[CLASS_VARIABLE_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::ATOMIC,
+	acl::TokenType::GREEDY,
+	acl::TokenType::STRONG,
+	acl::TokenType::WEAK,
+	acl::TokenType::UNSAFE,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED,
+	acl::TokenType::STATIC};
+
+constexpr int CLASS_ALIAS_MODIFIERS_LEN = 7;
+const acl::TokenType CLASS_ALIAS_MODIFIERS[CLASS_ALIAS_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED};
+
+constexpr int NAMESPACE_ALIAS_MODIFIERS_LEN = 6;
+const acl::TokenType NAMESPACE_ALIAS_MODIFIERS[NAMESPACE_ALIAS_MODIFIERS_LEN] =
+	{acl::TokenType::INTERNAL,
+	 acl::TokenType::META_DEPRECATED,
+	 acl::TokenType::META_ENABLEWARNING,
+	 acl::TokenType::META_DISABLEWARNING,
+	 acl::TokenType::PUBLIC,
+	 acl::TokenType::PRIVATE};
+
+constexpr int NAMESPACE_VARIABLE_MODIFIERS_LEN = 11;
+const acl::TokenType
+	NAMESPACE_VARIABLE_MODIFIERS[NAMESPACE_VARIABLE_MODIFIERS_LEN] = {
+		acl::TokenType::INTERNAL,
+		acl::TokenType::ATOMIC,
+		acl::TokenType::GREEDY,
+		acl::TokenType::STRONG,
+		acl::TokenType::WEAK,
+		acl::TokenType::UNSAFE,
+		acl::TokenType::META_DEPRECATED,
+		acl::TokenType::META_ENABLEWARNING,
+		acl::TokenType::META_DISABLEWARNING,
+		acl::TokenType::PUBLIC,
+		acl::TokenType::PRIVATE};
+
+constexpr int NAMESPACE_FUNCTION_MODIFIERS_LEN = 12;
+const acl::TokenType
+	NAMESPACE_FUNCTION_MODIFIERS[NAMESPACE_FUNCTION_MODIFIERS_LEN] = {
+		acl::TokenType::INTERNAL,
+		acl::TokenType::UNSAFE,
+		acl::TokenType::THROWING,
+		acl::TokenType::NOEXCEPT,
+		acl::TokenType::ASYNC,
+		acl::TokenType::EXTERN,
+		acl::TokenType::META_NORETURN,
+		acl::TokenType::META_DEPRECATED,
+		acl::TokenType::META_ENABLEWARNING,
+		acl::TokenType::META_DISABLEWARNING,
+		acl::TokenType::PUBLIC,
+		acl::TokenType::PRIVATE};
+
+constexpr int ENUM_CASE_MODIFIERS_LEN = 7;
+const acl::TokenType ENUM_CASE_MODIFIERS[ENUM_CASE_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::UNSAFE,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING};
+
+constexpr int CLASS_FUNCTION_MODIFIERS_LEN = 19;
+const acl::TokenType CLASS_FUNCTION_MODIFIERS[CLASS_FUNCTION_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::UNSAFE,
+	acl::TokenType::THROWING,
+	acl::TokenType::NOEXCEPT,
+	acl::TokenType::ASYNC,
+	acl::TokenType::EXTERN,
+	acl::TokenType::META_NORETURN,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED,
+	acl::TokenType::STATIC,
+	acl::TokenType::FINAL,
+	acl::TokenType::OVERRIDE,
+	acl::TokenType::INFIX,
+	acl::TokenType::PREFIX,
+	acl::TokenType::POSTFIX};
+
+constexpr int TEMPLATE_FUNCTION_MODIFIERS_LEN = 18;
+const acl::TokenType
+	TEMPLATE_FUNCTION_MODIFIERS[TEMPLATE_FUNCTION_MODIFIERS_LEN] = {
+		acl::TokenType::INTERNAL,
+		acl::TokenType::UNSAFE,
+		acl::TokenType::THROWING,
+		acl::TokenType::NOEXCEPT,
+		acl::TokenType::ASYNC,
+		acl::TokenType::EXTERN,
+		acl::TokenType::META_NORETURN,
+		acl::TokenType::META_DEPRECATED,
+		acl::TokenType::META_ENABLEWARNING,
+		acl::TokenType::META_DISABLEWARNING,
+		acl::TokenType::PUBLIC,
+		acl::TokenType::PRIVATE,
+		acl::TokenType::PROTECTED,
+		acl::TokenType::STATIC,
+		acl::TokenType::OVERRIDE,
+		acl::TokenType::INFIX,
+		acl::TokenType::PREFIX,
+		acl::TokenType::POSTFIX};
+
+constexpr int ENUM_FUNCTION_MODIFIERS_LEN = 17;
+const acl::TokenType ENUM_FUNCTION_MODIFIERS[ENUM_FUNCTION_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::UNSAFE,
+	acl::TokenType::THROWING,
+	acl::TokenType::NOEXCEPT,
+	acl::TokenType::ASYNC,
+	acl::TokenType::EXTERN,
+	acl::TokenType::META_NORETURN,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::STATIC,
+	acl::TokenType::OVERRIDE,
+	acl::TokenType::INFIX,
+	acl::TokenType::PREFIX,
+	acl::TokenType::POSTFIX};
+
+constexpr int CONSTRUCTOR_MODIFIERS_LEN = 10;
+const acl::TokenType CONSTRUCTOR_MODIFIERS[CONSTRUCTOR_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::UNSAFE,
+	acl::TokenType::THROWING,
+	acl::TokenType::NOEXCEPT,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED};
+
+constexpr int DESTRUCTOR_MODIFIERS_LEN = 2;
+const acl::TokenType DESTRUCTOR_MODIFIERS[DESTRUCTOR_MODIFIERS_LEN] = {
+	acl::TokenType::META_ENABLEWARNING, acl::TokenType::META_DISABLEWARNING};
+
+constexpr int GET_BLOCK_MODIFIERS_LEN = 11;
+const acl::TokenType GET_BLOCK_MODIFIERS[GET_BLOCK_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::UNSAFE,
+	acl::TokenType::THROWING,
+	acl::TokenType::NOEXCEPT,
+	acl::TokenType::ASYNC,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED};
+
+constexpr int SET_BLOCK_MODIFIERS_LEN = 11;
+const acl::TokenType SET_BLOCK_MODIFIERS[SET_BLOCK_MODIFIERS_LEN] = {
+	acl::TokenType::INTERNAL,
+	acl::TokenType::UNSAFE,
+	acl::TokenType::THROWING,
+	acl::TokenType::NOEXCEPT,
+	acl::TokenType::ASYNC,
+	acl::TokenType::META_DEPRECATED,
+	acl::TokenType::META_ENABLEWARNING,
+	acl::TokenType::META_DISABLEWARNING,
+	acl::TokenType::PUBLIC,
+	acl::TokenType::PRIVATE,
+	acl::TokenType::PROTECTED};
+
+constexpr int INIT_BLOCK_MODIFIERS_LEN = 2;
+const acl::TokenType INIT_BLOCK_MODIFIERS[INIT_BLOCK_MODIFIERS_LEN] = {
+	acl::TokenType::META_ENABLEWARNING, acl::TokenType::META_DISABLEWARNING};
+}  // namespace
 
 namespace acl {
 Token* Parser::lh(int pos) {
@@ -63,12 +433,14 @@ void Parser::advanceAndDelete() {
 int Parser::mark() {
 	int result = current;
 	marks.push_back(result);
+	queuedDeletedTokens.push_back({});
 	return result;
 }
 
 void Parser::resetToMark() {
 	current = marks.back();
 	marks.pop_back();
+	queuedDeletedTokens.pop_back();
 }
 
 void Parser::popMark(bool deleteQueuedTokens) {
@@ -113,63 +485,76 @@ Ast* Parser::parse() {
 	GlobalScope* globalScope = new GlobalScope(lh(0)->meta, {});
 	currentScope = globalScope;
 
+	skipNewlines(true);
 	while (hasNext()) {
-		auto t = lh(0);
-		int current = 0;
-		while (isModifier(t->type)) {
-			if (t->type == TokenType::META_ENABLEWARNING ||
-				t->type == TokenType::META_DISABLEWARNING) {
-				// 3 for keyword, lparen, and initial string literal
-				current += 3;
-
-				// 2 for comma and next string literal
-				while (lh(current)->type == TokenType::COMMA) current += 2;
-
-				t = lh(++current);
-			} else
-				t = lh(++current);
-		}
-
-		if (t->type == TokenType::FUN)
-			globalScope->content.push_back(parseGlobalFunction());
-		else if (t->type == TokenType::META_ENABLEWARNING ||
-				 t->type == TokenType::META_DISABLEWARNING)
-			globalScope->content.push_back(parseWarningMeta());
-		else if (t->type == TokenType::VAR)
-			globalScope->content.push_back(parseGlobalVariable());
-		else if (t->type == TokenType::CONST)
-			globalScope->content.push_back(parseGlobalConstant());
-		else if (t->type == TokenType::ALIAS)
-			globalScope->content.push_back(parseGlobalAlias());
-		else if (t->type == TokenType::CLASS)
-			globalScope->content.push_back(parseGlobalClass());
-		else if (t->type == TokenType::STRUCT)
-			globalScope->content.push_back(parseGlobalStruct());
-		else if (t->type == TokenType::TEMPLATE)
-			globalScope->content.push_back(parseGlobalTemplate());
-		else if (t->type == TokenType::ENUM)
-			globalScope->content.push_back(parseGlobalEnum());
-		else if (t->type == TokenType::NAMESPACE)
-			globalScope->content.push_back(parseGlobalNamespace());
-		else if (t->type == TokenType::IMPORT)
-			globalScope->content.push_back(parseImport());
-		else if (t->type == TokenType::META_SRCLOCK)
-			globalScope->content.push_back(
-				parseSourceLock(globalScope->content));
-		else if (t->type == TokenType::NL || t->type == TokenType::SEMICOLON)
-			advanceAndDelete();
-		else
-			throw AclException(ASP_GLOBAL_SCOPE, t->meta,
-							   "Invalid token in global scope");
+		globalScope->content.push_back(parseGlobalContent());
+		skipNewlines(true);
 	}
 
 	return new Ast(globalScope);
 }
 
-Function* Parser::parseGlobalFunction() {
+Node* Parser::parseGlobalContent() {
+	skipNewlines(true);
+
+	auto t = lh(0);
+	int current = 0;
+	while (isModifier(t->type) || t->type == TokenType::NL) {
+		if (t->type == TokenType::META_ENABLEWARNING ||
+			t->type == TokenType::META_DISABLEWARNING) {
+			// 3 for keyword, lparen, and initial string literal
+			current += 3;
+
+			// 2 for comma and next string literal
+			while (lh(current)->type == TokenType::COMMA) current += 2;
+
+			t = lh(++current);
+		} else
+			t = lh(++current);
+	}
+
+	if (t->type == TokenType::FUN)
+		return parseFunction(GLOBAL_FUNCTION_MODIFIERS,
+							 GLOBAL_FUNCTION_MODIFIERS_LEN);
+	else if (t->type == TokenType::META_ENABLEWARNING ||
+			 t->type == TokenType::META_DISABLEWARNING)
+		return parseGlobalWarningMeta();
+	else if (t->type == TokenType::VAR)
+		return parseNonClassVariable(GLOBAL_VARIABLE_MODIFIERS,
+									 GLOBAL_VARIABLE_MODIFIERS_LEN);
+	else if (t->type == TokenType::CONST)
+		return parseNonClassConstant(GLOBAL_VARIABLE_MODIFIERS,
+									 GLOBAL_VARIABLE_MODIFIERS_LEN);
+	else if (t->type == TokenType::ALIAS)
+		return parseAlias(GLOBAL_ALIAS_MODIFIERS, GLOBAL_ALIAS_MODIFIERS_LEN);
+	else if (t->type == TokenType::CLASS)
+		return parseClass(GLOBAL_CLASS_MODIFIERS, GLOBAL_CLASS_MODIFIERS_LEN);
+	else if (t->type == TokenType::STRUCT)
+		return parseStruct(GLOBAL_STRUCT_MODIFIERS,
+						   GLOBAL_STRUCT_MODIFIERS_LEN);
+	else if (t->type == TokenType::TEMPLATE)
+		return parseTemplate(GLOBAL_TEMPLATE_MODIFIERS,
+							 GLOBAL_TEMPLATE_MODIFIERS_LEN);
+	else if (t->type == TokenType::ENUM)
+		return parseEnum(GLOBAL_ENUM_MODIFIERS, GLOBAL_ENUM_MODIFIERS_LEN);
+	else if (t->type == TokenType::NAMESPACE)
+		return parseNamespace(GLOBAL_NAMESPACE_MODIFIERS,
+							  GLOBAL_NAMESPACE_MODIFIERS_LEN);
+	else if (t->type == TokenType::IMPORT)
+		return parseImport();
+	else if (t->type == TokenType::META_SRCLOCK)
+		return parseSourceLock(
+			dynamic_cast<GlobalScope*>(currentScope)->content);
+	StringBuffer sb;
+	sb << "Invalid token [" << (int)t->type << "] in global scope";
+	String s = sb.str();
+	throw AclException(ASP_GLOBAL_SCOPE, t->meta, s);
+}
+
+Function* Parser::parseFunction(const TokenType* modifiersArray,
+								int modifiersLen) {
 	List<Modifier*> modifiers;
-	parseModifiers(GLOBAL_FUNCTION_MODIFIERS, GLOBAL_FUNCTION_MODIFIERS_LEN,
-				   modifiers);
+	parseModifiers(modifiersArray, modifiersLen, modifiers);
 	matchAndDelete(TokenType::FUN);
 
 	// You can't have global operator functions, so we only accept identifiers
@@ -219,6 +604,7 @@ Function* Parser::parseGlobalFunction() {
 
 void Parser::parseModifiers(const TokenType* types, int typesLen,
 							List<Modifier*>& dest) {
+	skipNewlines();
 	auto t = lh(0);
 	while (isModifier(t->type)) {
 		bool foundModifier = false;
@@ -238,6 +624,8 @@ void Parser::parseModifiers(const TokenType* types, int typesLen,
 		}
 		if (!foundModifier)
 			throw AclException(ASP_CORE_UNKNOWN, t->meta, "Invalid modifier");
+		skipNewlines();
+		t = lh(0);
 	}
 }
 
@@ -272,6 +660,8 @@ void Parser::skipNewlines(bool includeSemicolons) {
 		   (includeSemicolons && lh(0)->type == TokenType::SEMICOLON))
 		advanceAndDelete();
 }
+
+#pragma region TypeRef
 
 TypeRef* Parser::parseTypeRef() {
 	TypeRef* result;
@@ -378,6 +768,10 @@ TypeRef* Parser::parseSubscriptTypeRef(TypeRef* base) {
 	return new ArrayTypeRef(meta, base);
 }
 
+#pragma endregion
+
+#pragma region Expression
+
 Expression* Parser::parseExpression() { return parseAssignmentExpression(); }
 
 Expression* Parser::parseAssignmentExpression() {
@@ -410,11 +804,10 @@ Expression* Parser::parseLambdaExpression() {
 	parseLambdaParameters(parameters);
 	auto meta = lh(0)->meta;
 	matchAndDelete(TokenType::EQUALS_ARROW);
-	List<Node*> content;
-	auto result = new LambdaExpression(meta, modifiers, parameters, content,
-									   currentScope);
+	auto result =
+		new LambdaExpression(meta, modifiers, parameters, {}, currentScope);
 	currentScope = result;
-	parseLambdaBody(content);
+	parseLambdaBody(result->content);
 	currentScope = currentScope->parentScope;
 	return result;
 }
@@ -662,9 +1055,9 @@ Expression* Parser::parseCallExpressionEnd(Expression* caller) {
 	}
 
 	auto meta = lh(0)->meta;
-	matchAndDelete(TokenType::LBRACE);
+	matchAndDelete(TokenType::LBRACKET);
 	auto arg = parseExpression();
-	matchAndDelete(TokenType::RBRACE);
+	matchAndDelete(TokenType::RBRACKET);
 	return new SubscriptExpression(meta, caller, arg);
 }
 
@@ -767,56 +1160,1414 @@ void Parser::parseExpressionList(List<Expression*>& dest) {
 	}
 }
 
-WarningMetaDeclaration* Parser::parseWarningMeta() { return nullptr; }
-Variable* Parser::parseGlobalVariable() { return nullptr; }
-Variable* Parser::parseGlobalConstant() { return nullptr; }
-Alias* Parser::parseGlobalAlias() { return nullptr; }
-Class* Parser::parseGlobalClass() { return nullptr; }
-Struct* Parser::parseGlobalStruct() { return nullptr; }
-Template* Parser::parseGlobalTemplate() { return nullptr; }
-Enum* Parser::parseGlobalEnum() { return nullptr; }
-Namespace* Parser::parseGlobalNamespace() { return nullptr; }
-Import* Parser::parseImport() { return nullptr; }
-MetaDeclaration* Parser::parseSourceLock(const List<Node*>& globalContent) {
-	return nullptr;
+#pragma endregion
+
+WarningMetaDeclaration* Parser::parseGlobalWarningMeta() {
+	Token* t = lh(0);
+	advance();
+	matchAndDelete(TokenType::LPAREN);
+	List<Token*> args;
+	args.push_back(match(TokenType::STRING_LITERAL));
+	while (lh(0)->type == TokenType::COMMA) {
+		advanceAndDelete();
+		args.push_back(match(TokenType::STRING_LITERAL));
+	}
+	matchAndDelete(TokenType::RPAREN);
+	skipNewlines();
+	return new WarningMetaDeclaration(t, args, parseGlobalContent());
 }
 
-void Parser::parseParameters(List<Parameter*>& dest) {}
-Parameter* Parser::parseParameter() { return nullptr; }
-void Parser::parseGenerics(List<GenericType*>& dest) {}
+Variable* Parser::parseNonClassVariable(const TokenType* modifiersArray,
+										int modifiersLen) {
+	List<Modifier*> modifiers;
+	parseModifiers(modifiersArray, modifiersLen, modifiers);
+	matchAndDelete(TokenType::VAR);
+
+	auto id = match(TokenType::ID);
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		declaredType = parseTypeRef();
+	}
+
+	Expression* value = nullptr;
+	if (lh(0)->type == TokenType::EQUALS) {
+		advanceAndDelete();
+		value = parseExpression();
+	}
+	parseNewlineEquiv();
+
+	auto result = new Variable(modifiers, id, declaredType, value, false);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+Variable* Parser::parseNonClassConstant(const TokenType* modifiersArray,
+										int modifiersLen) {
+	List<Modifier*> modifiers;
+	parseModifiers(modifiersArray, modifiersLen, modifiers);
+	matchAndDelete(TokenType::CONST);
+
+	auto id = match(TokenType::ID);
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		declaredType = parseTypeRef();
+	}
+
+	matchAndDelete(TokenType::EQUALS);
+	Expression* value = parseExpression();
+	parseNewlineEquiv();
+
+	auto result = new Variable(modifiers, id, declaredType, value, true);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+Alias* Parser::parseAlias(const TokenType* modifiersArray, int modifiersLen) {
+	List<Modifier*> modifiers;
+	parseModifiers(modifiersArray, modifiersLen, modifiers);
+	matchAndDelete(TokenType::ALIAS);
+
+	auto id = match(TokenType::ID);
+
+	List<GenericType*> generics;
+	if (lh(0)->type == TokenType::LT) {
+		parseGenerics(generics);
+	}
+
+	matchAndDelete(TokenType::EQUALS);
+	TypeRef* value = parseTypeRef();
+	parseNewlineEquiv();
+
+	auto result = new Alias(modifiers, id, generics, value);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+Class* Parser::parseClass(const TokenType* modifiersArray, int modifiersLen) {
+	List<Modifier*> modifiers;
+	parseModifiers(modifiersArray, modifiersLen, modifiers);
+	matchAndDelete(TokenType::CLASS);
+
+	auto id = match(TokenType::ID);
+
+	List<GenericType*> generics;
+	if (lh(0)->type == TokenType::LT) {
+		parseGenerics(generics);
+	}
+
+	skipNewlines();
+
+	TypeRef* declaredParentType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		skipNewlines();
+		declaredParentType = parseTypeRef();
+	}
+
+	skipNewlines();
+
+	List<TypeRef*> usedTemplates;
+	if (lh(0)->type == TokenType::USES) {
+		advanceAndDelete();
+		skipNewlines();
+		usedTemplates.push_back(parseTypeRef());
+		skipNewlines();
+		while (lh(0)->type == TokenType::COMMA) {
+			advanceAndDelete();
+			skipNewlines();
+			usedTemplates.push_back(parseTypeRef());
+			skipNewlines();
+		}
+	}
+
+	matchAndDelete(TokenType::LBRACE);
+
+	auto result = new Class(modifiers, id, generics, declaredParentType,
+							usedTemplates, {}, currentScope);
+	currentScope = result;
+	parseClassContent(result->content);
+	currentScope = currentScope->parentScope;
+	matchAndDelete(TokenType::RBRACE);
+
+	return result;
+}
+
+Struct* Parser::parseStruct(const TokenType* modifiersArray, int modifiersLen) {
+	List<Modifier*> modifiers;
+	parseModifiers(modifiersArray, modifiersLen, modifiers);
+	matchAndDelete(TokenType::STRUCT);
+
+	auto id = match(TokenType::ID);
+
+	List<GenericType*> generics;
+	if (lh(0)->type == TokenType::LT) {
+		parseGenerics(generics);
+	}
+
+	skipNewlines();
+
+	TypeRef* declaredParentType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		skipNewlines();
+		declaredParentType = parseTypeRef();
+	}
+
+	skipNewlines();
+
+	List<TypeRef*> usedTemplates;
+	if (lh(0)->type == TokenType::USES) {
+		advanceAndDelete();
+		skipNewlines();
+		usedTemplates.push_back(parseTypeRef());
+		skipNewlines();
+		while (lh(0)->type == TokenType::COMMA) {
+			advanceAndDelete();
+			skipNewlines();
+			usedTemplates.push_back(parseTypeRef());
+			skipNewlines();
+		}
+	}
+
+	matchAndDelete(TokenType::LBRACE);
+
+	auto result = new Struct(modifiers, id, generics, declaredParentType,
+							 usedTemplates, {}, currentScope);
+	currentScope = result;
+	parseClassContent(result->content);
+	currentScope = currentScope->parentScope;
+	matchAndDelete(TokenType::RBRACE);
+
+	return result;
+}
+
+Template* Parser::parseTemplate(const TokenType* modifiersArray,
+								int modifiersLen) {
+	List<Modifier*> modifiers;
+	parseModifiers(modifiersArray, modifiersLen, modifiers);
+	matchAndDelete(TokenType::TEMPLATE);
+
+	auto id = match(TokenType::ID);
+
+	List<GenericType*> generics;
+	if (lh(0)->type == TokenType::LT) {
+		parseGenerics(generics);
+	}
+
+	skipNewlines();
+
+	List<TypeRef*> declaredParentTypes;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		skipNewlines();
+		declaredParentTypes.push_back(parseTypeRef());
+		skipNewlines();
+		while (lh(0)->type == TokenType::COMMA) {
+			advanceAndDelete();
+			skipNewlines();
+			declaredParentTypes.push_back(parseTypeRef());
+			skipNewlines();
+		}
+	}
+
+	matchAndDelete(TokenType::LBRACE);
+
+	auto result = new Template(modifiers, id, generics, declaredParentTypes, {},
+							   currentScope);
+	currentScope = result;
+	parseTemplateContent(result->content);
+	currentScope = currentScope->parentScope;
+	matchAndDelete(TokenType::RBRACE);
+
+	return result;
+}
+
+Enum* Parser::parseEnum(const TokenType* modifiersArray, int modifiersLen) {
+	List<Modifier*> modifiers;
+	parseModifiers(modifiersArray, modifiersLen, modifiers);
+	matchAndDelete(TokenType::ENUM);
+
+	auto id = match(TokenType::ID);
+
+	List<GenericType*> generics;
+	if (lh(0)->type == TokenType::LT) {
+		parseGenerics(generics);
+	}
+
+	skipNewlines();
+
+	List<TypeRef*> usedTemplates;
+	if (lh(0)->type == TokenType::USES) {
+		advanceAndDelete();
+		skipNewlines();
+		usedTemplates.push_back(parseTypeRef());
+		skipNewlines();
+		while (lh(0)->type == TokenType::COMMA) {
+			advanceAndDelete();
+			skipNewlines();
+			usedTemplates.push_back(parseTypeRef());
+			skipNewlines();
+		}
+	}
+
+	matchAndDelete(TokenType::LBRACE);
+
+	auto result =
+		new Enum(modifiers, id, generics, usedTemplates, {}, currentScope);
+	currentScope = result;
+	parseEnumContent(result->content);
+	currentScope = currentScope->parentScope;
+	matchAndDelete(TokenType::RBRACE);
+
+	return result;
+}
+
+Namespace* Parser::parseNamespace(const TokenType* modifiersArray,
+								  int modifiersLen) {
+	List<Modifier*> modifiers;
+	parseModifiers(modifiersArray, modifiersLen, modifiers);
+	matchAndDelete(TokenType::NAMESPACE);
+
+	auto id = match(TokenType::ID);
+
+	List<GenericType*> generics;
+	if (lh(0)->type == TokenType::LT) {
+		parseGenerics(generics);
+	}
+
+	skipNewlines();
+
+	matchAndDelete(TokenType::LBRACE);
+
+	auto result = new Namespace(modifiers, id, generics, {}, currentScope);
+	currentScope = result;
+	parseNamespaceContent(result->content);
+	currentScope = currentScope->parentScope;
+	matchAndDelete(TokenType::RBRACE);
+
+	return result;
+}
+
+void Parser::parseClassContent(List<Node*>& dest) {
+	skipNewlines(true);
+	while (lh(0)->type != TokenType::RBRACE) {
+		auto t = lh(0);
+		int current = 0;
+		while (isModifier(t->type) || t->type == TokenType::NL) {
+			if (t->type == TokenType::META_ENABLEWARNING ||
+				t->type == TokenType::META_DISABLEWARNING) {
+				// 3 for keyword, lparen, and initial string literal
+				current += 3;
+
+				// 2 for comma and next string literal
+				while (lh(current)->type == TokenType::COMMA) current += 2;
+
+				t = lh(++current);
+			} else
+				t = lh(++current);
+		}
+
+		if (t->type == TokenType::VAR) {
+			dest.push_back(parseClassVariable());
+		} else if (t->type == TokenType::CONST) {
+			dest.push_back(parseClassConstant());
+		} else if (t->type == TokenType::ALIAS) {
+			dest.push_back(
+				parseAlias(CLASS_ALIAS_MODIFIERS, CLASS_ALIAS_MODIFIERS_LEN));
+		} else if (t->type == TokenType::CLASS) {
+			dest.push_back(
+				parseClass(CLASS_CLASS_MODIFIERS, CLASS_CLASS_MODIFIERS_LEN));
+		} else if (t->type == TokenType::STRUCT) {
+			dest.push_back(parseStruct(CLASS_STRUCT_MODIFIERS,
+									   CLASS_STRUCT_MODIFIERS_LEN));
+		} else if (t->type == TokenType::TEMPLATE) {
+			dest.push_back(parseTemplate(CLASS_TEMPLATE_MODIFIERS,
+										 CLASS_TEMPLATE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::ENUM) {
+			dest.push_back(
+				parseEnum(CLASS_ENUM_MODIFIERS, CLASS_ENUM_MODIFIERS_LEN));
+		} else if (t->type == TokenType::NAMESPACE) {
+			dest.push_back(parseNamespace(CLASS_NAMESPACE_MODIFIERS,
+										  CLASS_NAMESPACE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::FUN) {
+			dest.push_back(parseFunction(CLASS_FUNCTION_MODIFIERS,
+										 CLASS_FUNCTION_MODIFIERS_LEN));
+		} else if (t->type == TokenType::CONSTRUCT) {
+			dest.push_back(parseConstructor());
+		} else if (t->type == TokenType::DESTRUCT) {
+			dest.push_back(parseDestructor());
+		} else {
+			throw AclException(ASP_CORE_UNKNOWN, t->meta,
+							   "Invalid struct content");
+		}
+
+		skipNewlines(true);
+	}
+}
+
+void Parser::parseTemplateContent(List<Node*>& dest) {
+	skipNewlines(true);
+	while (lh(0)->type != TokenType::RBRACE) {
+		auto t = lh(0);
+		int current = 0;
+		while (isModifier(t->type) || t->type == TokenType::NL) {
+			if (t->type == TokenType::META_ENABLEWARNING ||
+				t->type == TokenType::META_DISABLEWARNING) {
+				// 3 for keyword, lparen, and initial string literal
+				current += 3;
+
+				// 2 for comma and next string literal
+				while (lh(current)->type == TokenType::COMMA) current += 2;
+
+				t = lh(++current);
+			} else
+				t = lh(++current);
+		}
+
+		if (t->type == TokenType::VAR) {
+			dest.push_back(parseTemplateVariable());
+		} else if (t->type == TokenType::CONST) {
+			dest.push_back(parseTemplateConstant());
+		} else if (t->type == TokenType::ALIAS) {
+			dest.push_back(
+				parseAlias(CLASS_ALIAS_MODIFIERS, CLASS_ALIAS_MODIFIERS_LEN));
+		} else if (t->type == TokenType::CLASS) {
+			dest.push_back(
+				parseClass(CLASS_CLASS_MODIFIERS, CLASS_CLASS_MODIFIERS_LEN));
+		} else if (t->type == TokenType::STRUCT) {
+			dest.push_back(parseStruct(CLASS_STRUCT_MODIFIERS,
+									   CLASS_STRUCT_MODIFIERS_LEN));
+		} else if (t->type == TokenType::TEMPLATE) {
+			dest.push_back(parseTemplate(CLASS_TEMPLATE_MODIFIERS,
+										 CLASS_TEMPLATE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::ENUM) {
+			dest.push_back(
+				parseEnum(CLASS_ENUM_MODIFIERS, CLASS_ENUM_MODIFIERS_LEN));
+		} else if (t->type == TokenType::NAMESPACE) {
+			dest.push_back(parseNamespace(CLASS_NAMESPACE_MODIFIERS,
+										  CLASS_NAMESPACE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::FUN) {
+			dest.push_back(parseFunction(TEMPLATE_FUNCTION_MODIFIERS,
+										 TEMPLATE_FUNCTION_MODIFIERS_LEN));
+		} else {
+			throw AclException(ASP_CORE_UNKNOWN, t->meta,
+							   "Invalid template content");
+		}
+
+		skipNewlines(true);
+	}
+}
+
+void Parser::parseEnumContent(List<Node*>& dest) {
+	skipNewlines(true);
+	while (lh(0)->type != TokenType::RBRACE) {
+		auto t = lh(0);
+		int current = 0;
+		while (isModifier(t->type) || t->type == TokenType::NL) {
+			if (t->type == TokenType::META_ENABLEWARNING ||
+				t->type == TokenType::META_DISABLEWARNING) {
+				// 3 for keyword, lparen, and initial string literal
+				current += 3;
+
+				// 2 for comma and next string literal
+				while (lh(current)->type == TokenType::COMMA) current += 2;
+
+				t = lh(++current);
+			} else
+				t = lh(++current);
+		}
+
+		if (t->type == TokenType::VAR) {
+			dest.push_back(parseClassVariable());
+		} else if (t->type == TokenType::CONST) {
+			dest.push_back(parseClassConstant());
+		} else if (t->type == TokenType::ALIAS) {
+			dest.push_back(parseAlias(NAMESPACE_ALIAS_MODIFIERS,
+									  NAMESPACE_ALIAS_MODIFIERS_LEN));
+		} else if (t->type == TokenType::CLASS) {
+			dest.push_back(parseClass(NAMESPACE_CLASS_MODIFIERS,
+									  NAMESPACE_CLASS_MODIFIERS_LEN));
+		} else if (t->type == TokenType::STRUCT) {
+			dest.push_back(parseStruct(NAMESPACE_STRUCT_MODIFIERS,
+									   NAMESPACE_STRUCT_MODIFIERS_LEN));
+		} else if (t->type == TokenType::TEMPLATE) {
+			dest.push_back(parseTemplate(NAMESPACE_TEMPLATE_MODIFIERS,
+										 NAMESPACE_TEMPLATE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::ENUM) {
+			dest.push_back(parseEnum(NAMESPACE_ENUM_MODIFIERS,
+									 NAMESPACE_ENUM_MODIFIERS_LEN));
+		} else if (t->type == TokenType::NAMESPACE) {
+			dest.push_back(parseNamespace(NAMESPACE_NAMESPACE_MODIFIERS,
+										  NAMESPACE_NAMESPACE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::FUN) {
+			dest.push_back(parseFunction(ENUM_FUNCTION_MODIFIERS,
+										 ENUM_FUNCTION_MODIFIERS_LEN));
+		} else if (t->type == TokenType::CONSTRUCT) {
+			dest.push_back(parseConstructor());
+		} else if (t->type == TokenType::DESTRUCT) {
+			dest.push_back(parseDestructor());
+		} else if (t->type == TokenType::CASE) {
+			dest.push_back(parseEnumCase());
+		} else {
+			throw AclException(ASP_CORE_UNKNOWN, t->meta,
+							   "Invalid enum content");
+		}
+
+		skipNewlines(true);
+	}
+}
+
+void Parser::parseNamespaceContent(List<Node*>& dest) {
+	skipNewlines(true);
+	while (lh(0)->type != TokenType::RBRACE) {
+		auto t = lh(0);
+		int current = 0;
+		while (isModifier(t->type) || t->type == TokenType::NL) {
+			if (t->type == TokenType::META_ENABLEWARNING ||
+				t->type == TokenType::META_DISABLEWARNING) {
+				// 3 for keyword, lparen, and initial string literal
+				current += 3;
+
+				// 2 for comma and next string literal
+				while (lh(current)->type == TokenType::COMMA) current += 2;
+
+				t = lh(++current);
+			} else
+				t = lh(++current);
+		}
+
+		if (t->type == TokenType::VAR) {
+			dest.push_back(
+				parseNonClassVariable(NAMESPACE_VARIABLE_MODIFIERS,
+									  NAMESPACE_VARIABLE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::CONST) {
+			dest.push_back(
+				parseNonClassConstant(NAMESPACE_VARIABLE_MODIFIERS,
+									  NAMESPACE_VARIABLE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::ALIAS) {
+			dest.push_back(parseAlias(NAMESPACE_ALIAS_MODIFIERS,
+									  NAMESPACE_ALIAS_MODIFIERS_LEN));
+		} else if (t->type == TokenType::CLASS) {
+			dest.push_back(parseClass(NAMESPACE_CLASS_MODIFIERS,
+									  NAMESPACE_CLASS_MODIFIERS_LEN));
+		} else if (t->type == TokenType::STRUCT) {
+			dest.push_back(parseStruct(NAMESPACE_STRUCT_MODIFIERS,
+									   NAMESPACE_STRUCT_MODIFIERS_LEN));
+		} else if (t->type == TokenType::TEMPLATE) {
+			dest.push_back(parseTemplate(NAMESPACE_TEMPLATE_MODIFIERS,
+										 NAMESPACE_TEMPLATE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::ENUM) {
+			dest.push_back(parseEnum(NAMESPACE_TEMPLATE_MODIFIERS,
+									 NAMESPACE_ENUM_MODIFIERS_LEN));
+		} else if (t->type == TokenType::NAMESPACE) {
+			dest.push_back(parseNamespace(NAMESPACE_NAMESPACE_MODIFIERS,
+										  NAMESPACE_NAMESPACE_MODIFIERS_LEN));
+		} else if (t->type == TokenType::FUN) {
+			dest.push_back(parseFunction(NAMESPACE_FUNCTION_MODIFIERS,
+										 NAMESPACE_FUNCTION_MODIFIERS_LEN));
+		} else {
+			throw AclException(ASP_CORE_UNKNOWN, t->meta,
+							   "Invalid namespace content");
+		}
+
+		skipNewlines(true);
+	}
+}
+
+Variable* Parser::parseClassVariable() {
+	List<Modifier*> modifiers;
+	parseModifiers(CLASS_VARIABLE_MODIFIERS, CLASS_VARIABLE_MODIFIERS_LEN,
+				   modifiers);
+	matchAndDelete(TokenType::VAR);
+
+	auto id = match(TokenType::ID);
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		declaredType = parseTypeRef();
+	}
+
+	Node* value = nullptr;
+	if (lh(0)->type == TokenType::EQUALS) {
+		advanceAndDelete();
+		value = parseExpression();
+		parseNewlineEquiv();
+	} else if (lh(0)->type == TokenType::LBRACE) {
+		auto meta = lh(0)->meta;
+		advanceAndDelete();
+		skipNewlines();
+		value = parseVariableBlock(meta);
+		skipNewlines();
+		matchAndDelete(TokenType::RBRACE);
+	} else
+		parseNewlineEquiv();
+
+	auto result = new Variable(modifiers, id, declaredType, value, false);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+Variable* Parser::parseClassConstant() {
+	List<Modifier*> modifiers;
+	parseModifiers(CLASS_VARIABLE_MODIFIERS, CLASS_VARIABLE_MODIFIERS_LEN,
+				   modifiers);
+	matchAndDelete(TokenType::CONST);
+
+	auto id = match(TokenType::ID);
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		declaredType = parseTypeRef();
+	}
+
+	Node* value = nullptr;
+	if (lh(0)->type == TokenType::EQUALS) {
+		advanceAndDelete();
+		value = parseExpression();
+		parseNewlineEquiv();
+	} else if (lh(0)->type == TokenType::LBRACE) {
+		auto meta = lh(0)->meta;
+		advanceAndDelete();
+		skipNewlines();
+		value = parseVariableBlock(meta);
+		skipNewlines();
+		matchAndDelete(TokenType::RBRACE);
+	} else
+		parseNewlineEquiv();
+
+	auto result = new Variable(modifiers, id, declaredType, value, true);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+VariableBlock* Parser::parseVariableBlock(const SourceMeta& meta) {
+	FunctionBlock* getBlock = nullptr;
+	SetBlock* setBlock = nullptr;
+	FunctionBlock* initBlock = nullptr;
+
+	skipNewlines(true);
+	while (lh(0)->type != TokenType::RBRACE) {
+		auto t = lh(0);
+		int current = 0;
+		while (isModifier(t->type) || t->type == TokenType::NL) {
+			if (t->type == TokenType::META_ENABLEWARNING ||
+				t->type == TokenType::META_DISABLEWARNING) {
+				// 3 for keyword, lparen, and initial string literal
+				current += 3;
+
+				// 2 for comma and next string literal
+				while (lh(current)->type == TokenType::COMMA) current += 2;
+
+				t = lh(++current);
+			} else
+				t = lh(++current);
+		}
+
+		if (t->type == TokenType::GET && getBlock)
+			throw AclException(ASP_CORE_UNKNOWN, t->meta,
+							   "Duplicate get block");
+		else if (t->type == TokenType::GET)
+			getBlock = parseGetBlock();
+		else if (t->type == TokenType::SET && setBlock)
+			throw AclException(ASP_CORE_UNKNOWN, t->meta,
+							   "Duplicate set block");
+		else if (t->type == TokenType::SET)
+			setBlock = parseSetBlock();
+		else if (t->type == TokenType::INIT && initBlock)
+			throw AclException(ASP_CORE_UNKNOWN, t->meta,
+							   "Duplicate init block");
+		else
+			initBlock = parseInitBlock();
+
+		skipNewlines(true);
+	}
+
+	return new VariableBlock(meta, getBlock, setBlock, initBlock);
+}
+
+FunctionBlock* Parser::parseGetBlock() {
+	List<Modifier*> modifiers;
+	parseModifiers(GET_BLOCK_MODIFIERS, GET_BLOCK_MODIFIERS_LEN, modifiers);
+	skipNewlines();
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::GET);
+	skipNewlines();
+	FunctionBlock* block = new FunctionBlock(meta, modifiers, {}, currentScope);
+
+	if (lh(0)->type == TokenType::LBRACE) {
+		currentScope = block;
+		matchAndDelete(TokenType::LBRACE);
+		parseFunctionBlockContent(block->content);
+		matchAndDelete(TokenType::RBRACE);
+		currentScope = currentScope->parentScope;
+	}
+
+	return block;
+}
+
+SetBlock* Parser::parseSetBlock() {
+	List<Modifier*> modifiers;
+	parseModifiers(SET_BLOCK_MODIFIERS, SET_BLOCK_MODIFIERS_LEN, modifiers);
+	skipNewlines();
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::SET);
+	skipNewlines();
+	matchAndDelete(TokenType::LPAREN);
+	skipNewlines();
+	auto param = parseParameter();
+	skipNewlines();
+	matchAndDelete(TokenType::RPAREN);
+	skipNewlines();
+
+	SetBlock* block = new SetBlock(meta, modifiers, param, {}, currentScope);
+
+	if (lh(0)->type == TokenType::LBRACE) {
+		currentScope = block;
+		matchAndDelete(TokenType::LBRACE);
+		parseFunctionBlockContent(block->content);
+		matchAndDelete(TokenType::RBRACE);
+		currentScope = currentScope->parentScope;
+	}
+
+	return block;
+}
+
+FunctionBlock* Parser::parseInitBlock() {
+	List<Modifier*> modifiers;
+	parseModifiers(INIT_BLOCK_MODIFIERS, INIT_BLOCK_MODIFIERS_LEN, modifiers);
+	skipNewlines();
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::INIT);
+	skipNewlines();
+	FunctionBlock* block = new FunctionBlock(meta, modifiers, {}, currentScope);
+
+	if (lh(0)->type == TokenType::LBRACE) {
+		currentScope = block;
+		matchAndDelete(TokenType::LBRACE);
+		parseFunctionBlockContent(block->content);
+		matchAndDelete(TokenType::RBRACE);
+		currentScope = currentScope->parentScope;
+	}
+
+	return block;
+}
+
+Constructor* Parser::parseConstructor() {
+	List<Modifier*> modifiers;
+	parseModifiers(CONSTRUCTOR_MODIFIERS, CONSTRUCTOR_MODIFIERS_LEN, modifiers);
+	skipNewlines();
+	auto id = match(TokenType::CONSTRUCT);
+	skipNewlines();
+	matchAndDelete(TokenType::LPAREN);
+	List<Parameter*> parameters;
+	parseParameters(parameters);
+	matchAndDelete(TokenType::RPAREN);
+
+	skipNewlines();
+
+	Constructor* constructor =
+		new Constructor(modifiers, id, parameters, {}, currentScope);
+	currentScope = constructor;
+
+	matchAndDelete(TokenType::LBRACE);
+	parseFunctionBlockContent(constructor->content);
+	matchAndDelete(TokenType::RBRACE);
+
+	currentScope = currentScope->parentScope;
+
+	return constructor;
+}
+
+Destructor* Parser::parseDestructor() {
+	List<Modifier*> modifiers;
+	parseModifiers(DESTRUCTOR_MODIFIERS, DESTRUCTOR_MODIFIERS_LEN, modifiers);
+	skipNewlines();
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::DESTRUCT);
+	skipNewlines();
+
+	Destructor* destructor = new Destructor(meta, modifiers, {}, currentScope);
+	currentScope = destructor;
+
+	matchAndDelete(TokenType::LBRACE);
+	parseFunctionBlockContent(destructor->content);
+	matchAndDelete(TokenType::RBRACE);
+
+	currentScope = currentScope->parentScope;
+
+	return destructor;
+}
+
+Variable* Parser::parseTemplateVariable() {
+	List<Modifier*> modifiers;
+	parseModifiers(CLASS_VARIABLE_MODIFIERS, CLASS_VARIABLE_MODIFIERS_LEN,
+				   modifiers);
+
+	bool hasStaticMod = false;
+	for (const auto& mod : modifiers) {
+		if (mod->content->type == TokenType::STATIC) {
+			hasStaticMod = true;
+			break;
+		}
+	}
+
+	if (!hasStaticMod)
+		throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta,
+						   "No static modifier found for template variable");
+
+	matchAndDelete(TokenType::VAR);
+
+	auto id = match(TokenType::ID);
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		declaredType = parseTypeRef();
+	}
+
+	Expression* value = nullptr;
+	if (lh(0)->type == TokenType::EQUALS) {
+		advanceAndDelete();
+		value = parseExpression();
+	}
+	parseNewlineEquiv();
+
+	auto result = new Variable(modifiers, id, declaredType, value, false);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+Variable* Parser::parseTemplateConstant() {
+	List<Modifier*> modifiers;
+	parseModifiers(CLASS_VARIABLE_MODIFIERS, CLASS_VARIABLE_MODIFIERS_LEN,
+				   modifiers);
+
+	bool hasStaticMod = false;
+	for (const auto& mod : modifiers) {
+		if (mod->content->type == TokenType::STATIC) {
+			hasStaticMod = true;
+			break;
+		}
+	}
+
+	if (!hasStaticMod)
+		throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta,
+						   "No static modifier found for template constant");
+
+	matchAndDelete(TokenType::CONST);
+
+	auto id = match(TokenType::ID);
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		declaredType = parseTypeRef();
+	}
+
+	matchAndDelete(TokenType::EQUALS);
+	Expression* value = parseExpression();
+	parseNewlineEquiv();
+
+	auto result = new Variable(modifiers, id, declaredType, value, true);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+EnumCase* Parser::parseEnumCase() {
+	List<Modifier*> modifiers;
+	parseModifiers(ENUM_CASE_MODIFIERS, ENUM_CASE_MODIFIERS_LEN, modifiers);
+	matchAndDelete(TokenType::CASE);
+
+	auto id = match(TokenType::ID);
+
+	skipNewlines();
+
+	List<Expression*> args;
+	if (lh(0)->type == TokenType::LPAREN) {
+		advanceAndDelete();
+		skipNewlines();
+		if (lh(0)->type != TokenType::RPAREN) {
+			parseExpressionList(args);
+			skipNewlines();
+		}
+		matchAndDelete(TokenType::RPAREN);
+	}
+
+	parseNewlineEquiv();
+
+	return new EnumCase(modifiers, id, args);
+}
+
+Import* Parser::parseImport() {
+	matchAndDelete(TokenType::IMPORT);
+	skipNewlines();
+	auto t = lh(0);
+	if (t->type == TokenType::LBRACE) {
+		return parseFromImport();
+	} else if (t->type == TokenType::STRING_LITERAL) {
+		return parseStandardImport();
+	}
+
+	int current = 1;
+	while (lh(current)->type == TokenType::NL) current++;
+
+	t = lh(current);
+	if (t->type == TokenType::COLON || t->type == TokenType::FROM) {
+		return parseFromImport();
+	}
+
+	return parseStandardImport();
+}
+
+Import* Parser::parseStandardImport() {
+	auto source = parseImportSource();
+	skipNewlines();
+	Token* alias = nullptr;
+	if (lh(0)->type == TokenType::AS) {
+		advanceAndDelete();
+		alias = match(TokenType::ID);
+	}
+	parseNewlineEquiv();
+	return new Import(source, alias, {});
+}
+
+Import* Parser::parseFromImport() {
+	List<ImportTarget*> targets;
+	if (lh(0)->type == TokenType::LBRACE) {
+		advanceAndDelete();
+		skipNewlines();
+		targets.push_back(parseImportTarget());
+		skipNewlines();
+		while (lh(0)->type == TokenType::COMMA) {
+			advanceAndDelete();
+			skipNewlines();
+			targets.push_back(parseImportTarget());
+			skipNewlines();
+		}
+		matchAndDelete(TokenType::RBRACE);
+		skipNewlines();
+	} else {
+		targets.push_back(parseImportTarget());
+		skipNewlines();
+	}
+
+	matchAndDelete(TokenType::FROM);
+	skipNewlines();
+
+	auto source = parseImportSource();
+
+	parseNewlineEquiv();
+
+	return new Import(source, nullptr, targets);
+}
+
+ImportSource* Parser::parseImportSource() {
+	auto t = lh(0);
+	if (t->type == TokenType::STRING_LITERAL) {
+		advance();
+		return new ImportSource(t, nullptr);
+	}
+
+	match(TokenType::ID);
+
+	auto result = new ImportSource(t, nullptr);
+
+	skipNewlines();
+	while (lh(0)->type == TokenType::DOT) {
+		advance();
+		skipNewlines();
+		auto child = match(TokenType::ID);
+		result = new ImportSource(child, result);
+		skipNewlines();
+	}
+
+	return result;
+}
+
+ImportTarget* Parser::parseImportTarget() {
+	auto id = match(TokenType::ID);
+	skipNewlines();
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		skipNewlines();
+		declaredType = parseTypeRef();
+	}
+
+	return new ImportTarget(id, declaredType);
+}
+
+MetaDeclaration* Parser::parseSourceLock(const List<Node*>& globalContent) {
+	auto t = match(TokenType::META_SRCLOCK);
+	if (!globalContent.empty() && ctx.warnings[ASP_SOURCE_LOCK_FRONTING]) {
+		StringBuffer sb;
+		sb << "Source lock declarations should be placed at the beginning of "
+			  "the module (found one in module "
+		   << t->meta.file << " at " << t->meta.line << ":" << t->meta.col
+		   << ") (ASP " << ASP_SOURCE_LOCK_FRONTING << ")";
+		String s = sb.str();
+		warn(s);
+	}
+	return new MetaDeclaration(t);
+}
+
+void Parser::parseParameters(List<Parameter*>& dest) {
+	skipNewlines();
+	if (lh(0)->type != TokenType::RPAREN) {
+		dest.push_back(parseParameter());
+		skipNewlines();
+		while (lh(0)->type == TokenType::COMMA) {
+			advanceAndDelete();
+			skipNewlines();
+			dest.push_back(parseParameter());
+			skipNewlines();
+		}
+	}
+}
+
+Parameter* Parser::parseParameter() {
+	List<Modifier*> modifiers;
+	parseModifiers(PARAMETER_MODIFIERS, PARAMETER_MODIFIERS_LEN, modifiers);
+
+	auto id = match(TokenType::ID);
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		declaredType = parseTypeRef();
+	}
+
+	auto result = new Parameter(modifiers, id, declaredType);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+void Parser::parseGenerics(List<GenericType*>& dest) {
+	skipNewlines();
+	matchAndDelete(TokenType::LT);
+	skipNewlines();
+	dest.push_back(parseGenericType());
+	skipNewlines();
+	while (lh(0)->type == TokenType::COMMA) {
+		advanceAndDelete();
+		skipNewlines();
+		dest.push_back(parseGenericType());
+		skipNewlines();
+	}
+	matchAndDelete(TokenType::GT);
+}
+
+GenericType* Parser::parseGenericType() {
+	auto id = match(TokenType::ID);
+	skipNewlines();
+	TypeRef* declaredParentType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		skipNewlines();
+		declaredParentType = parseTypeRef();
+	}
+	return new GenericType(id, declaredParentType);
+}
+
+void Parser::parseGenericImpl(List<TypeRef*>& dest) {
+	auto t = lh(0);
+	if (t->type != TokenType::LT) relex();
+	matchAndDelete(TokenType::LT);
+	skipNewlines();
+	dest.push_back(parseTypeRef());
+	skipNewlines();
+	while (lh(0)->type == TokenType::COMMA) {
+		advanceAndDelete();
+		skipNewlines();
+		dest.push_back(parseTypeRef());
+		skipNewlines();
+	}
+	if (lh(0)->type != TokenType::GT) relex();
+	matchAndDelete(TokenType::GT);
+}
+
+#pragma region FunctionBlockContent
+
+FunctionBlock* Parser::parseFunctionBlock() {
+	skipNewlines(true);
+	List<Modifier*> modifiers;
+	parseModifiers(FUNCTION_BLOCK_MODIFIERS, FUNCTION_BLOCK_MODIFIERS_LEN,
+				   modifiers);
+	skipNewlines();
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::LBRACE);
+	FunctionBlock* result =
+		new FunctionBlock(meta, modifiers, {}, currentScope);
+	currentScope = result;
+	parseFunctionBlockContent(result->content);
+	matchAndDelete(TokenType::RBRACE);
+	currentScope = currentScope->parentScope;
+	return result;
+}
 
 void Parser::parseFunctionBlockContent(List<Node*>& dest) {
 	skipNewlines(true);
 	while (lh(0)->type != TokenType::RBRACE) {
-		auto t = lh(0);
-		if (t->type == TokenType::IF) {
-		} else if (t->type == TokenType::WHILE) {
-		} else if (t->type == TokenType::REPEAT) {
-		} else if (t->type == TokenType::FOR) {
-		} else if (t->type == TokenType::SWITCH) {
-		} else if (t->type == TokenType::LBRACE ||
-				   (t->type == TokenType::UNSAFE &&
-					lh(1)->type == TokenType::LBRACE)) {
-		} else if (t->type == TokenType::BREAK ||
-				   t->type == TokenType::CONTINUE ||
-				   t->type == TokenType::FALL) {
-		} else if (t->type == TokenType::VAR) {
-		} else if (t->type == TokenType::CONST) {
-		} else if (t->type == TokenType::ALIAS) {
-		} else if (isLocalVariableModifier(t->type)) {
-		} else if (t->type == TokenType::THROW) {
-		} else if (t->type == TokenType::RETURN) {
+		dest.push_back(parseSingleFunctionBlockContent());
+		skipNewlines(true);
+	}
+}
+
+Node* Parser::parseSingleFunctionBlockContent() {
+	auto t = lh(0);
+	if (t->type == TokenType::IF) {
+		return parseIfBlock();
+	} else if (t->type == TokenType::WHILE) {
+		return parseWhileBlock();
+	} else if (t->type == TokenType::REPEAT) {
+		return parseRepeatBlock();
+	} else if (t->type == TokenType::FOR) {
+		return parseForBlock();
+	} else if (t->type == TokenType::SWITCH) {
+		return parseSwitchBlock();
+	} else if (t->type == TokenType::TRY) {
+		return parseTryBlock();
+	} else if (t->type == TokenType::LBRACE) {
+		return parseFunctionBlock();
+	} else if (t->type == TokenType::BREAK || t->type == TokenType::CONTINUE ||
+			   t->type == TokenType::FALL) {
+		advance();
+		parseNewlineEquiv();
+		return new SingleTokenStatement(t);
+	} else if (t->type == TokenType::VAR) {
+		return parseLocalVariable();
+	} else if (t->type == TokenType::CONST) {
+		return parseLocalConstant();
+	} else if (t->type == TokenType::ALIAS) {
+		return parseAlias(LOCAL_ALIAS_MODIFIERS, LOCAL_ALIAS_MODIFIERS_LEN);
+	} else if (isModifier(t->type)) {
+		// lookahead to var or const keyword
+		int current = 0;
+		while (isModifier(t->type) || t->type == TokenType::NL) {
+			if (t->type == TokenType::META_ENABLEWARNING ||
+				t->type == TokenType::META_DISABLEWARNING) {
+				// 3 for keyword, lparen, and initial string literal
+				current += 3;
+
+				// 2 for comma and next string literal
+				while (lh(current)->type == TokenType::COMMA) current += 2;
+
+				t = lh(++current);
+			} else
+				t = lh(++current);
+		}
+		if (t->type == TokenType::CONST)
+			return parseLocalConstant();
+		else if (t->type == TokenType::VAR)
+			return parseLocalVariable();
+		else if (t->type == TokenType::ALIAS)
+			return parseAlias(LOCAL_ALIAS_MODIFIERS, LOCAL_ALIAS_MODIFIERS_LEN);
+		return parseFunctionBlock();
+	} else if (t->type == TokenType::THROW) {
+		return parseThrowStatement();
+	} else if (t->type == TokenType::RETURN) {
+		return parseReturnStatement();
+	} else if (t->type == TokenType::META_ENABLEWARNING ||
+			   t->type == TokenType::META_DISABLEWARNING) {
+		return parseLocalWarningMeta();
+	}
+	auto result = parseExpression();
+	parseNewlineEquiv();
+	return result;
+}
+
+IfBlock* Parser::parseIfBlock() {
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::IF);
+	auto condition = parseExpression();
+	skipNewlines();
+	FunctionBlock* block;
+	if (lh(0)->type == TokenType::COMMA) {
+		advanceAndDelete();
+		skipNewlines();
+		auto blockMeta = lh(0)->meta;
+		block = new FunctionBlock(blockMeta, {}, {}, currentScope);
+		currentScope = block;
+		block->content.push_back(parseSingleFunctionBlockContent());
+		currentScope = currentScope->parentScope;
+	} else {
+		block = parseFunctionBlock();
+	}
+
+	skipNewlines();
+	List<ConditionalBlock*> elifBlocks;
+	while (lh(0)->type == TokenType::ELIF) {
+		auto elifMeta = lh(0)->meta;
+		advanceAndDelete();
+		auto elifCondition = parseExpression();
+		skipNewlines();
+		FunctionBlock* elifBlock;
+		if (lh(0)->type == TokenType::COMMA) {
+			advanceAndDelete();
+			skipNewlines();
+			auto blockMeta = lh(0)->meta;
+			elifBlock = new FunctionBlock(blockMeta, {}, {}, currentScope);
+			currentScope = elifBlock;
+			elifBlock->content.push_back(parseSingleFunctionBlockContent());
+			currentScope = currentScope->parentScope;
 		} else {
-			dest.push_back(parseExpression());
-			parseNewlineEquiv();
+			elifBlock = parseFunctionBlock();
+		}
+
+		skipNewlines();
+
+		elifBlocks.push_back(
+			new ConditionalBlock(elifMeta, elifCondition, elifBlock));
+	}
+
+	FunctionBlock* elseBlock = nullptr;
+	if (lh(0)->type == TokenType::ELSE) {
+		auto elseMeta = lh(0)->meta;
+		advanceAndDelete();
+		skipNewlines();
+		elseBlock = new FunctionBlock(elseMeta, {}, {}, currentScope);
+		currentScope = elseBlock;
+		elseBlock->content.push_back(parseSingleFunctionBlockContent());
+		currentScope = currentScope->parentScope;
+	}
+
+	return new IfBlock(meta, condition, block, elifBlocks, elseBlock);
+}
+
+WhileBlock* Parser::parseWhileBlock() {
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::WHILE);
+	auto condition = parseExpression();
+	skipNewlines();
+	FunctionBlock* block;
+	if (lh(0)->type == TokenType::COMMA) {
+		advanceAndDelete();
+		skipNewlines();
+		auto blockMeta = lh(0)->meta;
+		block = new FunctionBlock(blockMeta, {}, {}, currentScope);
+		currentScope = block;
+		block->content.push_back(parseSingleFunctionBlockContent());
+		currentScope = currentScope->parentScope;
+	} else {
+		block = parseFunctionBlock();
+	}
+
+	return new WhileBlock(meta, condition, block);
+}
+
+RepeatBlock* Parser::parseRepeatBlock() {
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::REPEAT);
+	skipNewlines();
+	FunctionBlock* block = new FunctionBlock(lh(0)->meta, {}, {}, currentScope);
+	currentScope = block;
+	block->content.push_back(parseSingleFunctionBlockContent());
+	currentScope = currentScope->parentScope;
+	skipNewlines(true);
+	matchAndDelete(TokenType::WHILE);
+	auto condition = parseExpression();
+	parseNewlineEquiv();
+	return new RepeatBlock(meta, condition, block);
+}
+
+ForBlock* Parser::parseForBlock() {
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::FOR);
+	skipNewlines();
+	auto iterator = parseParameter();
+	skipNewlines();
+	matchAndDelete(TokenType::IN);
+	skipNewlines();
+	auto iteratee = parseExpression();
+	skipNewlines();
+	FunctionBlock* block;
+	if (lh(0)->type == TokenType::COMMA) {
+		advanceAndDelete();
+		skipNewlines();
+		auto blockMeta = lh(0)->meta;
+		block = new FunctionBlock(blockMeta, {}, {}, currentScope);
+		currentScope = block;
+		block->content.push_back(parseSingleFunctionBlockContent());
+		currentScope = currentScope->parentScope;
+	} else {
+		block = parseFunctionBlock();
+	}
+
+	return new ForBlock(meta, iterator, iteratee, block);
+}
+
+SwitchBlock* Parser::parseSwitchBlock() {
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::SWITCH);
+	skipNewlines();
+	auto condition = parseExpression();
+	List<SwitchCaseBlock*> cases;
+	skipNewlines();
+	matchAndDelete(TokenType::LBRACE);
+	parseSwitchBlockCases(cases);
+	matchAndDelete(TokenType::RBRACE);
+	return new SwitchBlock(meta, condition, cases);
+}
+
+void Parser::parseSwitchBlockCases(List<SwitchCaseBlock*>& dest) {
+	skipNewlines(true);
+	bool foundDefault = false;
+	while (lh(0)->type != TokenType::RBRACE) {
+		if (lh(0)->type == TokenType::CASE) {
+			auto t = match(TokenType::CASE);
+			skipNewlines();
+			auto condition = parseExpression();
+			skipNewlines();
+			matchAndDelete(TokenType::COLON);
+			skipNewlines();
+			FunctionBlock* block =
+				new FunctionBlock(t->meta, {}, {}, currentScope);
+			currentScope = block;
+			parseFunctionBlockContent(block->content);
+			currentScope = currentScope->parentScope;
+			dest.push_back(new SwitchCaseBlock(t->meta, t, condition, block));
+		} else if (lh(0)->type == TokenType::DEFAULT && foundDefault) {
+			throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta,
+							   "Duplicate default case in switch block");
+		} else {
+			auto t = match(TokenType::DEFAULT);
+			skipNewlines();
+			matchAndDelete(TokenType::COLON);
+			skipNewlines();
+			FunctionBlock* block =
+				new FunctionBlock(t->meta, {}, {}, currentScope);
+			currentScope = block;
+			parseFunctionBlockContent(block->content);
+			currentScope = currentScope->parentScope;
+			dest.push_back(new SwitchCaseBlock(t->meta, t, nullptr, block));
+			foundDefault = true;
 		}
 		skipNewlines(true);
 	}
 }
 
-void Parser::parseGenericImpl(List<TypeRef*>& dest) {}
+TryBlock* Parser::parseTryBlock() {
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::TRY);
+	skipNewlines();
+	FunctionBlock* block = new FunctionBlock(lh(0)->meta, {}, {}, currentScope);
+	currentScope = block;
+	block->content.push_back(parseSingleFunctionBlockContent());
+	currentScope = currentScope->parentScope;
+	skipNewlines(true);
+	List<CatchBlock*> catchBlocks;
+	while (lh(0)->type == TokenType::CATCH) {
+		catchBlocks.push_back(parseCatchBlock());
+		skipNewlines();
+	}
+	return new TryBlock(meta, block, catchBlocks);
+}
 
-// ---------- Global Functions ---------- //
+CatchBlock* Parser::parseCatchBlock() {
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::CATCH);
+	skipNewlines();
+	auto exceptionVariable = parseParameter();
+	skipNewlines();
+	auto block = parseFunctionBlock();
+	return new CatchBlock(meta, exceptionVariable, block);
+}
+
+Variable* Parser::parseLocalVariable() {
+	List<Modifier*> modifiers;
+	parseModifiers(LOCAL_VARIABLE_MODIFIERS, LOCAL_VARIABLE_MODIFIERS_LEN,
+				   modifiers);
+	matchAndDelete(TokenType::VAR);
+
+	auto id = match(TokenType::ID);
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		declaredType = parseTypeRef();
+	}
+
+	Expression* value = nullptr;
+	if (lh(0)->type == TokenType::EQUALS) {
+		advanceAndDelete();
+		value = parseExpression();
+	}
+	parseNewlineEquiv();
+
+	auto result = new Variable(modifiers, id, declaredType, value, false);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+Variable* Parser::parseLocalConstant() {
+	List<Modifier*> modifiers;
+	parseModifiers(LOCAL_VARIABLE_MODIFIERS, LOCAL_VARIABLE_MODIFIERS_LEN,
+				   modifiers);
+	matchAndDelete(TokenType::CONST);
+
+	auto id = match(TokenType::ID);
+
+	TypeRef* declaredType = nullptr;
+	if (lh(0)->type == TokenType::COLON) {
+		advanceAndDelete();
+		declaredType = parseTypeRef();
+	}
+
+	matchAndDelete(TokenType::EQUALS);
+	Expression* value = parseExpression();
+	parseNewlineEquiv();
+
+	auto result = new Variable(modifiers, id, declaredType, value, true);
+	currentScope->addSymbol(result);
+	return result;
+}
+
+ThrowStatement* Parser::parseThrowStatement() {
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::THROW);
+	skipNewlines();
+	auto value = parseExpression();
+	parseNewlineEquiv();
+	return new ThrowStatement(meta, value);
+}
+
+ReturnStatement* Parser::parseReturnStatement() {
+	auto meta = lh(0)->meta;
+	matchAndDelete(TokenType::RETURN);
+	Expression* value = nullptr;
+	if (!isNewlineEquivalent(lh(0)->type) && lh(0)->type != TokenType::NL &&
+		lh(0)->type != TokenType::SEMICOLON)
+		value = parseExpression();
+	parseNewlineEquiv();
+	return new ReturnStatement(meta, value);
+}
+
+WarningMetaDeclaration* Parser::parseLocalWarningMeta() {
+	Token* t = lh(0);
+	advance();
+	matchAndDelete(TokenType::LPAREN);
+	List<Token*> args;
+	args.push_back(match(TokenType::STRING_LITERAL));
+	while (lh(0)->type == TokenType::COMMA) {
+		advanceAndDelete();
+		args.push_back(match(TokenType::STRING_LITERAL));
+	}
+	matchAndDelete(TokenType::RPAREN);
+	skipNewlines();
+	return new WarningMetaDeclaration(t, args,
+									  parseSingleFunctionBlockContent());
+}
+
+#pragma endregion
+
+#pragma region GlobalFunctions
 
 bool isModifier(TokenType type) {
 	return type == TokenType::INTERNAL || type == TokenType::PUBLIC ||
@@ -945,6 +2696,9 @@ bool isLiteral(TokenType type) {
 bool isLocalVariableModifier(TokenType type) {
 	return type == TokenType::ATOMIC || type == TokenType::REF ||
 		   type == TokenType::GREEDY || type == TokenType::STRONG ||
-		   type == TokenType::WEAK;
+		   type == TokenType::WEAK || type == TokenType::META_ENABLEWARNING ||
+		   type == TokenType::META_DISABLEWARNING;
 }
+
+#pragma endregion
 }  // namespace acl

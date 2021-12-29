@@ -144,6 +144,7 @@ Token* Lexer::lexNumber() {
 	StringBuffer sb;
 	sb << (char)initial;
 	if (initial == '.') {
+		sb.str("0.");
 		/*
 		We don't need to check for isdigit(next) here because we will only reach
 		this condition inside of lexSymbol when it finds a sequence of a dot
@@ -168,11 +169,24 @@ Token* Lexer::lexNumber() {
 	if (get() == '.') {
 		sb << (char)advance();
 
+		if (get() == '.') {
+			// If the sequence is a number followed by two dots, the two dots
+			// need to be tokenized as a single symbol
+			retract('.');
+			String content = sb.str();
+			return new Token{TokenType::INTEGER_LITERAL,
+							 content.substr(0, content.length() - 1),
+							 sourceMeta};
+		}
+
 		while (isdigit(get())) sb << (char)advance();
 
 		if (get() == 'e' || get() == 'E') lexExponent(sb);
 
 		String content = sb.str();
+
+		if (content[content.length() - 1] == '.') content.append("0");
+
 		return new Token{TokenType::FLOAT_LITERAL, content, sourceMeta};
 	}
 
@@ -383,7 +397,7 @@ bool isSymbolStart(int c) {
 }
 
 bool isSymbolPart(int c) {
-	String chars = "&*-+=|<>?";
+	String chars = "&*-+=|<>?.";
 	return chars.find(c) != String::npos;
 }
 
@@ -466,6 +480,7 @@ TokenType getIdentifierType(const String& str) {
 	if (str == "fall") return TokenType::FALL;
 	if (str == "global") return TokenType::GLOBAL;
 	if (str == "is") return TokenType::IS;
+	if (str == "uses") return TokenType::USES;
 
 	return TokenType::ID;
 }

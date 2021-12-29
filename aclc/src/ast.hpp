@@ -333,6 +333,16 @@ struct RepeatBlock : public ConditionalBlock {
 	virtual void toJson(StringBuffer& dest) const override;
 };
 
+struct ForBlock : public Node {
+	Parameter* iterator;
+	Expression* iteratee;
+	FunctionBlock* block;
+	ForBlock(const SourceMeta& sourceMeta, Parameter* iterator,
+			 Expression* iteratee, FunctionBlock* block);
+	virtual ~ForBlock();
+	virtual void toJson(StringBuffer& dest) const override;
+};
+
 struct CatchBlock : public Node {
 	Parameter* exceptionVariable;
 	FunctionBlock* block;
@@ -353,9 +363,10 @@ struct TryBlock : public Node {
 
 struct SwitchCaseBlock : public Node {
 	Token* caseType;  // "case" or "default"
+	Expression* condition;
 	FunctionBlock* block;
 	SwitchCaseBlock(const SourceMeta& sourceMeta, Token* caseType,
-					FunctionBlock* block);
+					Expression* condition, FunctionBlock* block);
 	virtual ~SwitchCaseBlock();
 	virtual void toJson(StringBuffer& dest) const override;
 };
@@ -536,11 +547,20 @@ struct ImportTarget : public Node {
 	virtual void toJson(StringBuffer& dest) const override;
 };
 
+struct ImportSource : public Node {
+	Token* content;
+	ImportSource* parent;
+	ImportSource(Token* content, ImportSource* parent);
+	virtual ~ImportSource();
+	virtual void toJson(StringBuffer& dest) const override;
+};
+
 struct Import : public Node {
-	Token* source;
+	ImportSource* source;
 	Token* alias;
 	List<ImportTarget*> targets;
-	Import(Token* source, Token* alias, const List<ImportTarget*>& targets);
+	Import(ImportSource* source, Token* alias,
+		   const List<ImportTarget*>& targets);
 	virtual ~Import();
 	virtual void toJson(StringBuffer& dest) const override;
 };

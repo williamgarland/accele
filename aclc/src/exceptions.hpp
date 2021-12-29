@@ -61,4 +61,6 @@ class TokenMismatchException : public ParserException {
 	TokenMismatchException(TokenType expected, Token* received);
 	virtual ~TokenMismatchException();
 };
+
+void warn(const String& message);
 }  // namespace acl

@@ -1,5 +1,7 @@
 #include "exceptions.hpp"
 
+#include <iostream>
+
 #include "lexer.hpp"
 
 namespace acl {
@@ -54,5 +56,7 @@ TokenMismatchException::TokenMismatchException(TokenType expected,
 }
 
 TokenMismatchException::~TokenMismatchException() {}
+
+void warn(const String& message) { std::cout << "[WARN]: " << message << "\n"; }
 
 }  // namespace acl

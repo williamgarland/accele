@@ -270,7 +270,7 @@ void SubscriptExpression::toJson(StringBuffer& dest) const {
 	dest << "{\n\"name\": \"SubscriptExpression\",\n";
 	dest << "\"target\": ";
 	target->toJson(dest);
-	dest << "\"index\": ";
+	dest << ",\n\"index\": ";
 	index->toJson(dest);
 	dest << "\n}";
 }
@@ -407,10 +407,10 @@ void LambdaExpression::toJson(StringBuffer& dest) const {
 	dest << "\"modifiers\": ";
 	json::appendList<Modifier*>(dest, modifiers,
 								[](auto& d, const auto& e) { e->toJson(d); });
-	dest << "\"parameters\": ";
+	dest << ",\n\"parameters\": ";
 	json::appendList<Parameter*>(dest, parameters,
 								 [](auto& d, const auto& e) { e->toJson(d); });
-	dest << "\"content\": ";
+	dest << ",\n\"content\": ";
 	json::appendList<Node*>(dest, content,
 							[](auto& d, const auto& e) { e->toJson(d); });
 	dest << "\n}";
@@ -624,6 +624,27 @@ void RepeatBlock::toJson(StringBuffer& dest) const {
 	dest << "\n}";
 }
 
+ForBlock::ForBlock(const SourceMeta& sourceMeta, Parameter* iterator,
+				   Expression* iteratee, FunctionBlock* block)
+	: Node(sourceMeta), iterator(iterator), iteratee(iteratee), block(block) {}
+
+ForBlock::~ForBlock() {
+	delete iterator;
+	delete iteratee;
+	delete block;
+}
+
+void ForBlock::toJson(StringBuffer& dest) const {
+	dest << "{\n\"name\": \"ForBlock\",\n";
+	dest << "\"iterator\": ";
+	iterator->toJson(dest);
+	dest << ",\n\"iteratee\": ";
+	iteratee->toJson(dest);
+	dest << ",\n\"block\": ";
+	block->toJson(dest);
+	dest << "\n}";
+}
+
 CatchBlock::CatchBlock(const SourceMeta& sourceMeta,
 					   Parameter* exceptionVariable, FunctionBlock* block)
 	: Node(sourceMeta), exceptionVariable(exceptionVariable), block(block) {}
@@ -662,18 +683,27 @@ void TryBlock::toJson(StringBuffer& dest) const {
 }
 
 SwitchCaseBlock::SwitchCaseBlock(const SourceMeta& sourceMeta, Token* caseType,
-								 FunctionBlock* block)
-	: Node(sourceMeta), caseType(caseType), block(block) {}
+								 Expression* condition, FunctionBlock* block)
+	: Node(sourceMeta),
+	  caseType(caseType),
+	  condition(condition),
+	  block(block) {}
 
 SwitchCaseBlock::~SwitchCaseBlock() {
 	delete caseType;
+	delete condition;
 	delete block;
 }
 
 void SwitchCaseBlock::toJson(StringBuffer& dest) const {
 	dest << "{\n\"name\": \"SwitchCaseBlock\",\n";
 	dest << "\"caseType\": \"" << caseType->data << "\",\n";
-	dest << "\"block\": ";
+	dest << "\"condition\": ";
+	if (condition)
+		condition->toJson(dest);
+	else
+		dest << "null";
+	dest << ",\n\"block\": ";
 	block->toJson(dest);
 	dest << "\n}";
 }
@@ -1117,8 +1147,31 @@ void ImportTarget::toJson(StringBuffer& dest) const {
 	dest << "\n}";
 }
 
-Import::Import(Token* source, Token* alias, const List<ImportTarget*>& targets)
-	: Node(source->meta), source(source), alias(alias), targets(targets) {}
+ImportSource::ImportSource(Token* content, ImportSource* parent)
+	: Node(content->meta), content(content), parent(parent) {}
+
+ImportSource::~ImportSource() {
+	delete content;
+	delete parent;
+}
+
+void ImportSource::toJson(StringBuffer& dest) const {
+	dest << "{\n\"name\": \"ImportSource\",\n";
+	dest << "\"content\": \"" << content->data << "\",\n";
+	dest << "\"parent\": ";
+	if (parent)
+		parent->toJson(dest);
+	else
+		dest << "null";
+	dest << "\n}";
+}
+
+Import::Import(ImportSource* source, Token* alias,
+			   const List<ImportTarget*>& targets)
+	: Node(source->sourceMeta),
+	  source(source),
+	  alias(alias),
+	  targets(targets) {}
 
 Import::~Import() {
 	delete source;
@@ -1128,9 +1181,8 @@ Import::~Import() {
 
 void Import::toJson(StringBuffer& dest) const {
 	dest << "{\n\"name\": \"Import\",\n";
-	dest << "\"sourceType\": " << (int)source->type << ",\n";
 	dest << "\"source\": ";
-	json::appendToken(dest, source);
+	source->toJson(dest);
 	dest << ",\n\"alias\": ";
 	if (alias)
 		dest << "\"" << alias->data << "\"";
@@ -1179,7 +1231,10 @@ void WarningMetaDeclaration::toJson(StringBuffer& dest) const {
 	json::appendList<Token*>(
 		dest, args, [](auto& d, const auto& e) { json::appendToken(d, e); });
 	dest << ",\n\"target\": ";
-	target->toJson(dest);
+	if (target)
+		target->toJson(dest);
+	else
+		dest << "null";
 	dest << "\n}";
 }
 
