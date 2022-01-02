@@ -555,6 +555,7 @@ TokenType getMetaType(const SourceMeta& sourceMeta, const String& str) {
 	if (str == "@deprecated") return TokenType::META_DEPRECATED;
 	if (str == "@enablewarning") return TokenType::META_ENABLEWARNING;
 	if (str == "@disablewarning") return TokenType::META_DISABLEWARNING;
+	if (str == "@nobuiltins") return TokenType::META_NOBUILTINS;
 	throw AclException(ASP_META_KEYWORDS, sourceMeta, "Invalid meta keyword");
 }
 

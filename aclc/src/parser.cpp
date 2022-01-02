@@ -474,6 +474,20 @@ Token* Parser::relex() {
 	return nullptr;	 // TODO: Implement this
 }
 
+void Parser::popScope() {
+	if (isFunctionScope(currentScope)) {
+		List<Symbol*> newSymbols;
+		for (auto& symbol : currentScope->symbols) {
+			if (dynamic_cast<Parameter*>(symbol)) {
+				newSymbols.push_back(symbol);
+			}
+		}
+		currentScope->symbols.clear();
+		for (auto& ns : newSymbols) currentScope->symbols.push_back(ns);
+	}
+	currentScope = currentScope->parentScope;
+}
+
 Parser::Parser(CompilerContext& ctx, Lexer&& lexer)
 	: ctx(ctx), lexer(lexer), current(0), currentScope(nullptr) {}
 
@@ -487,7 +501,11 @@ Ast* Parser::parse() {
 
 	skipNewlines(true);
 	while (hasNext()) {
-		globalScope->content.push_back(parseGlobalContent());
+		auto content = parseGlobalContent();
+		if (Import* imp = dynamic_cast<Import*>(content)) {
+			globalScope->addImport(imp);
+		} else
+			globalScope->content.push_back(content);
 		skipNewlines(true);
 	}
 
@@ -515,11 +533,15 @@ Node* Parser::parseGlobalContent() {
 
 	if (t->type == TokenType::FUN)
 		return parseFunction(GLOBAL_FUNCTION_MODIFIERS,
-							 GLOBAL_FUNCTION_MODIFIERS_LEN);
+							 GLOBAL_FUNCTION_MODIFIERS_LEN, false);
 	else if (t->type == TokenType::META_ENABLEWARNING ||
 			 t->type == TokenType::META_DISABLEWARNING)
 		return parseGlobalWarningMeta();
-	else if (t->type == TokenType::VAR)
+	else if (t->type == TokenType::META_NOBUILTINS) {
+		advance();
+		parseNewlineEquiv();
+		return new MetaDeclaration(t);
+	} else if (t->type == TokenType::VAR)
 		return parseNonClassVariable(GLOBAL_VARIABLE_MODIFIERS,
 									 GLOBAL_VARIABLE_MODIFIERS_LEN);
 	else if (t->type == TokenType::CONST)
@@ -552,14 +574,19 @@ Node* Parser::parseGlobalContent() {
 }
 
 Function* Parser::parseFunction(const TokenType* modifiersArray,
-								int modifiersLen) {
+								int modifiersLen, bool allowOperatorIds) {
 	List<Modifier*> modifiers;
 	parseModifiers(modifiersArray, modifiersLen, modifiers);
 	matchAndDelete(TokenType::FUN);
 
 	// You can't have global operator functions, so we only accept identifiers
 	// here
-	auto id = match(TokenType::ID);
+	Token* id;
+	if (allowOperatorIds && isFunctionOperator(lh(0)->type)) {
+		id = lh(0);
+		advance();
+	} else
+		id = match(TokenType::ID);
 
 	List<GenericType*> generics;
 	if (lh(0)->type == TokenType::LT) {
@@ -597,7 +624,7 @@ Function* Parser::parseFunction(const TokenType* modifiersArray,
 		parseNewlineEquiv();
 	}
 
-	currentScope = currentScope->parentScope;
+	popScope();
 
 	return function;
 }
@@ -695,6 +722,12 @@ TypeRef* Parser::parseTypeBase() {
 		TypeRef* value = parseTypeRef();
 		matchAndDelete(TokenType::RBRACKET);
 		return new MapTypeRef(meta, key, value);
+	} else if (t->type == TokenType::GLOBAL) {
+		advance();
+		skipNewlines();
+		matchAndDelete(TokenType::DOT);
+		skipNewlines();
+		return parseSimpleTypeBase(new SimpleTypeRef(t->meta, t, {}, nullptr));
 	} else {
 		return parseSimpleTypeBase(nullptr);
 	}
@@ -808,7 +841,7 @@ Expression* Parser::parseLambdaExpression() {
 		new LambdaExpression(meta, modifiers, parameters, {}, currentScope);
 	currentScope = result;
 	parseLambdaBody(result->content);
-	currentScope = currentScope->parentScope;
+	popScope();
 	return result;
 }
 
@@ -1288,9 +1321,10 @@ Class* Parser::parseClass(const TokenType* modifiersArray, int modifiersLen) {
 
 	auto result = new Class(modifiers, id, generics, declaredParentType,
 							usedTemplates, {}, currentScope);
+	currentScope->addSymbol(result);
 	currentScope = result;
 	parseClassContent(result->content);
-	currentScope = currentScope->parentScope;
+	popScope();
 	matchAndDelete(TokenType::RBRACE);
 
 	return result;
@@ -1337,9 +1371,10 @@ Struct* Parser::parseStruct(const TokenType* modifiersArray, int modifiersLen) {
 
 	auto result = new Struct(modifiers, id, generics, declaredParentType,
 							 usedTemplates, {}, currentScope);
+	currentScope->addSymbol(result);
 	currentScope = result;
 	parseClassContent(result->content);
-	currentScope = currentScope->parentScope;
+	popScope();
 	matchAndDelete(TokenType::RBRACE);
 
 	return result;
@@ -1378,9 +1413,10 @@ Template* Parser::parseTemplate(const TokenType* modifiersArray,
 
 	auto result = new Template(modifiers, id, generics, declaredParentTypes, {},
 							   currentScope);
+	currentScope->addSymbol(result);
 	currentScope = result;
 	parseTemplateContent(result->content);
-	currentScope = currentScope->parentScope;
+	popScope();
 	matchAndDelete(TokenType::RBRACE);
 
 	return result;
@@ -1418,9 +1454,10 @@ Enum* Parser::parseEnum(const TokenType* modifiersArray, int modifiersLen) {
 
 	auto result =
 		new Enum(modifiers, id, generics, usedTemplates, {}, currentScope);
+	currentScope->addSymbol(result);
 	currentScope = result;
 	parseEnumContent(result->content);
-	currentScope = currentScope->parentScope;
+	popScope();
 	matchAndDelete(TokenType::RBRACE);
 
 	return result;
@@ -1444,9 +1481,10 @@ Namespace* Parser::parseNamespace(const TokenType* modifiersArray,
 	matchAndDelete(TokenType::LBRACE);
 
 	auto result = new Namespace(modifiers, id, generics, {}, currentScope);
+	currentScope->addSymbol(result);
 	currentScope = result;
 	parseNamespaceContent(result->content);
-	currentScope = currentScope->parentScope;
+	popScope();
 	matchAndDelete(TokenType::RBRACE);
 
 	return result;
@@ -1495,7 +1533,7 @@ void Parser::parseClassContent(List<Node*>& dest) {
 										  CLASS_NAMESPACE_MODIFIERS_LEN));
 		} else if (t->type == TokenType::FUN) {
 			dest.push_back(parseFunction(CLASS_FUNCTION_MODIFIERS,
-										 CLASS_FUNCTION_MODIFIERS_LEN));
+										 CLASS_FUNCTION_MODIFIERS_LEN, true));
 		} else if (t->type == TokenType::CONSTRUCT) {
 			dest.push_back(parseConstructor());
 		} else if (t->type == TokenType::DESTRUCT) {
@@ -1552,7 +1590,8 @@ void Parser::parseTemplateContent(List<Node*>& dest) {
 										  CLASS_NAMESPACE_MODIFIERS_LEN));
 		} else if (t->type == TokenType::FUN) {
 			dest.push_back(parseFunction(TEMPLATE_FUNCTION_MODIFIERS,
-										 TEMPLATE_FUNCTION_MODIFIERS_LEN));
+										 TEMPLATE_FUNCTION_MODIFIERS_LEN,
+										 true));
 		} else {
 			throw AclException(ASP_CORE_UNKNOWN, t->meta,
 							   "Invalid template content");
@@ -1605,7 +1644,7 @@ void Parser::parseEnumContent(List<Node*>& dest) {
 										  NAMESPACE_NAMESPACE_MODIFIERS_LEN));
 		} else if (t->type == TokenType::FUN) {
 			dest.push_back(parseFunction(ENUM_FUNCTION_MODIFIERS,
-										 ENUM_FUNCTION_MODIFIERS_LEN));
+										 ENUM_FUNCTION_MODIFIERS_LEN, true));
 		} else if (t->type == TokenType::CONSTRUCT) {
 			dest.push_back(parseConstructor());
 		} else if (t->type == TokenType::DESTRUCT) {
@@ -1668,7 +1707,8 @@ void Parser::parseNamespaceContent(List<Node*>& dest) {
 										  NAMESPACE_NAMESPACE_MODIFIERS_LEN));
 		} else if (t->type == TokenType::FUN) {
 			dest.push_back(parseFunction(NAMESPACE_FUNCTION_MODIFIERS,
-										 NAMESPACE_FUNCTION_MODIFIERS_LEN));
+										 NAMESPACE_FUNCTION_MODIFIERS_LEN,
+										 false));
 		} else {
 			throw AclException(ASP_CORE_UNKNOWN, t->meta,
 							   "Invalid namespace content");
@@ -1805,7 +1845,7 @@ FunctionBlock* Parser::parseGetBlock() {
 		matchAndDelete(TokenType::LBRACE);
 		parseFunctionBlockContent(block->content);
 		matchAndDelete(TokenType::RBRACE);
-		currentScope = currentScope->parentScope;
+		popScope();
 	}
 
 	return block;
@@ -1818,21 +1858,26 @@ SetBlock* Parser::parseSetBlock() {
 	auto meta = lh(0)->meta;
 	matchAndDelete(TokenType::SET);
 	skipNewlines();
-	matchAndDelete(TokenType::LPAREN);
-	skipNewlines();
-	auto param = parseParameter();
-	skipNewlines();
-	matchAndDelete(TokenType::RPAREN);
-	skipNewlines();
+
+	Parameter* param = nullptr;
+
+	if (lh(0)->type == TokenType::LPAREN) {
+		matchAndDelete(TokenType::LPAREN);
+		skipNewlines();
+		auto param = parseParameter();
+		skipNewlines();
+		matchAndDelete(TokenType::RPAREN);
+		skipNewlines();
+	}
 
 	SetBlock* block = new SetBlock(meta, modifiers, param, {}, currentScope);
 
-	if (lh(0)->type == TokenType::LBRACE) {
+	if (param) {
 		currentScope = block;
 		matchAndDelete(TokenType::LBRACE);
 		parseFunctionBlockContent(block->content);
 		matchAndDelete(TokenType::RBRACE);
-		currentScope = currentScope->parentScope;
+		popScope();
 	}
 
 	return block;
@@ -1847,13 +1892,11 @@ FunctionBlock* Parser::parseInitBlock() {
 	skipNewlines();
 	FunctionBlock* block = new FunctionBlock(meta, modifiers, {}, currentScope);
 
-	if (lh(0)->type == TokenType::LBRACE) {
-		currentScope = block;
-		matchAndDelete(TokenType::LBRACE);
-		parseFunctionBlockContent(block->content);
-		matchAndDelete(TokenType::RBRACE);
-		currentScope = currentScope->parentScope;
-	}
+	currentScope = block;
+	matchAndDelete(TokenType::LBRACE);
+	parseFunctionBlockContent(block->content);
+	matchAndDelete(TokenType::RBRACE);
+	popScope();
 
 	return block;
 }
@@ -1873,13 +1916,14 @@ Constructor* Parser::parseConstructor() {
 
 	Constructor* constructor =
 		new Constructor(modifiers, id, parameters, {}, currentScope);
+	currentScope->addSymbol(constructor);
 	currentScope = constructor;
 
 	matchAndDelete(TokenType::LBRACE);
 	parseFunctionBlockContent(constructor->content);
 	matchAndDelete(TokenType::RBRACE);
 
-	currentScope = currentScope->parentScope;
+	popScope();
 
 	return constructor;
 }
@@ -1899,7 +1943,7 @@ Destructor* Parser::parseDestructor() {
 	parseFunctionBlockContent(destructor->content);
 	matchAndDelete(TokenType::RBRACE);
 
-	currentScope = currentScope->parentScope;
+	popScope();
 
 	return destructor;
 }
@@ -2001,7 +2045,9 @@ EnumCase* Parser::parseEnumCase() {
 
 	parseNewlineEquiv();
 
-	return new EnumCase(modifiers, id, args);
+	auto result = new EnumCase(modifiers, id, args);
+	currentScope->addSymbol(result);
+	return result;
 }
 
 Import* Parser::parseImport() {
@@ -2145,7 +2191,8 @@ Parameter* Parser::parseParameter() {
 	}
 
 	auto result = new Parameter(modifiers, id, declaredType);
-	currentScope->addSymbol(result);
+	// Do not add symbol here; that is taken care of in the constructor of
+	// whatever accepts the parameter
 	return result;
 }
 
@@ -2208,7 +2255,7 @@ FunctionBlock* Parser::parseFunctionBlock() {
 	currentScope = result;
 	parseFunctionBlockContent(result->content);
 	matchAndDelete(TokenType::RBRACE);
-	currentScope = currentScope->parentScope;
+	popScope();
 	return result;
 }
 
@@ -2296,7 +2343,7 @@ IfBlock* Parser::parseIfBlock() {
 		block = new FunctionBlock(blockMeta, {}, {}, currentScope);
 		currentScope = block;
 		block->content.push_back(parseSingleFunctionBlockContent());
-		currentScope = currentScope->parentScope;
+		popScope();
 	} else {
 		block = parseFunctionBlock();
 	}
@@ -2316,7 +2363,7 @@ IfBlock* Parser::parseIfBlock() {
 			elifBlock = new FunctionBlock(blockMeta, {}, {}, currentScope);
 			currentScope = elifBlock;
 			elifBlock->content.push_back(parseSingleFunctionBlockContent());
-			currentScope = currentScope->parentScope;
+			popScope();
 		} else {
 			elifBlock = parseFunctionBlock();
 		}
@@ -2335,7 +2382,7 @@ IfBlock* Parser::parseIfBlock() {
 		elseBlock = new FunctionBlock(elseMeta, {}, {}, currentScope);
 		currentScope = elseBlock;
 		elseBlock->content.push_back(parseSingleFunctionBlockContent());
-		currentScope = currentScope->parentScope;
+		popScope();
 	}
 
 	return new IfBlock(meta, condition, block, elifBlocks, elseBlock);
@@ -2354,7 +2401,7 @@ WhileBlock* Parser::parseWhileBlock() {
 		block = new FunctionBlock(blockMeta, {}, {}, currentScope);
 		currentScope = block;
 		block->content.push_back(parseSingleFunctionBlockContent());
-		currentScope = currentScope->parentScope;
+		popScope();
 	} else {
 		block = parseFunctionBlock();
 	}
@@ -2369,7 +2416,7 @@ RepeatBlock* Parser::parseRepeatBlock() {
 	FunctionBlock* block = new FunctionBlock(lh(0)->meta, {}, {}, currentScope);
 	currentScope = block;
 	block->content.push_back(parseSingleFunctionBlockContent());
-	currentScope = currentScope->parentScope;
+	popScope();
 	skipNewlines(true);
 	matchAndDelete(TokenType::WHILE);
 	auto condition = parseExpression();
@@ -2395,7 +2442,7 @@ ForBlock* Parser::parseForBlock() {
 		block = new FunctionBlock(blockMeta, {}, {}, currentScope);
 		currentScope = block;
 		block->content.push_back(parseSingleFunctionBlockContent());
-		currentScope = currentScope->parentScope;
+		popScope();
 	} else {
 		block = parseFunctionBlock();
 	}
@@ -2431,7 +2478,7 @@ void Parser::parseSwitchBlockCases(List<SwitchCaseBlock*>& dest) {
 				new FunctionBlock(t->meta, {}, {}, currentScope);
 			currentScope = block;
 			parseFunctionBlockContent(block->content);
-			currentScope = currentScope->parentScope;
+			popScope();
 			dest.push_back(new SwitchCaseBlock(t->meta, t, condition, block));
 		} else if (lh(0)->type == TokenType::DEFAULT && foundDefault) {
 			throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta,
@@ -2445,7 +2492,7 @@ void Parser::parseSwitchBlockCases(List<SwitchCaseBlock*>& dest) {
 				new FunctionBlock(t->meta, {}, {}, currentScope);
 			currentScope = block;
 			parseFunctionBlockContent(block->content);
-			currentScope = currentScope->parentScope;
+			popScope();
 			dest.push_back(new SwitchCaseBlock(t->meta, t, nullptr, block));
 			foundDefault = true;
 		}
@@ -2460,7 +2507,7 @@ TryBlock* Parser::parseTryBlock() {
 	FunctionBlock* block = new FunctionBlock(lh(0)->meta, {}, {}, currentScope);
 	currentScope = block;
 	block->content.push_back(parseSingleFunctionBlockContent());
-	currentScope = currentScope->parentScope;
+	popScope();
 	skipNewlines(true);
 	List<CatchBlock*> catchBlocks;
 	while (lh(0)->type == TokenType::CATCH) {
@@ -2691,6 +2738,23 @@ bool isLiteral(TokenType type) {
 		   type == TokenType::BOOLEAN_LITERAL ||
 		   type == TokenType::INTEGER_LITERAL || type == TokenType::SELF ||
 		   type == TokenType::SUPER;
+}
+
+bool isFunctionOperator(TokenType type) {
+	return type == TokenType::TILDE || type == TokenType::EXCLAMATION_POINT ||
+		   type == TokenType::PERCENT || type == TokenType::CARET ||
+		   type == TokenType::AMPERSAND || type == TokenType::ASTERISK ||
+		   type == TokenType::MINUS || type == TokenType::MINUS ||
+		   type == TokenType::PLUS || type == TokenType::PIPE ||
+		   type == TokenType::LT || type == TokenType::GT ||
+		   type == TokenType::SLASH || type == TokenType::DOUBLE_EQUALS ||
+		   type == TokenType::EXCLAMATION_POINT_EQUALS ||
+		   type == TokenType::NOT || type == TokenType::AS ||
+		   type == TokenType::DOUBLE_ASTERISK ||
+		   type == TokenType::DOUBLE_MINUS || type == TokenType::DOUBLE_PLUS ||
+		   type == TokenType::DOUBLE_LT || type == TokenType::DOUBLE_GT ||
+		   type == TokenType::DOUBLE_DOT || type == TokenType::TRIPLE_DOT ||
+		   type == TokenType::COMPARE;
 }
 
 bool isLocalVariableModifier(TokenType type) {

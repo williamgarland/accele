@@ -135,7 +135,7 @@ fun f() {
 }
 
 fun main(args) {
-    if args[0] {
+    if args[0] == "example" {
         print(f())
     } // The lifetime of the object returned by "f" is extended beyond the return statement in "f" until the end of this if-block (i.e. the calling scope), at which point its reference count reaches zero.
 }

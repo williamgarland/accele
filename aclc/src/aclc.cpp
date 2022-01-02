@@ -4,8 +4,9 @@
 
 #include "lexer.hpp"
 #include "parser.hpp"
+#include "resolver.hpp"
 
-void generateAstJson(const acl::Ast* ast, const acl::String& dest) {
+void dumpAst(const acl::Ast* ast, const acl::String& dest) {
 	std::ofstream ofs(dest);
 	if (ofs) {
 		acl::StringBuffer json;
@@ -18,10 +19,10 @@ void generateAstJson(const acl::Ast* ast, const acl::String& dest) {
 
 void checkForAstOutputFlag(int argc, char* argv[], const acl::Ast* ast) {
 	for (int i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "--genAstJson") == 0) {
+		if (strcmp(argv[i], "--dump-ast") == 0) {
 			if (i + 1 >= argc)
 				throw "Expected output destination following AST generation flag";
-			generateAstJson(ast, argv[i + 1]);
+			dumpAst(ast, argv[i + 1]);
 		}
 	}
 }
@@ -46,6 +47,10 @@ int main(int argc, char* argv[]) {
 		auto ast = parser.parse();
 
 		checkForAstOutputFlag(argc, argv, ast);
+
+		Resolver resolver(ast);
+
+		resolver.resolve();
 
 		delete ast;
 	}

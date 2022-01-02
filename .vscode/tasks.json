@@ -5,6 +5,7 @@
             "label": "Build aclc",
             "command": "/usr/bin/g++",
             "args": [
+                "-std=c++17",
                 "-fdiagnostics-color=always",
                 "-g",
                 "./aclc/src/*.cpp",

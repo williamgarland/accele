@@ -11,7 +11,7 @@
             "program": "${workspaceFolder}/aclc/test/aclc",
             "args": [
                 "${workspaceFolder}/aclc/test/test.accele",
-                "--genAstJson",
+                "--dump-ast",
                 "${workspaceFolder}/aclc/test/ast.json"
             ],
             "stopAtEntry": false,

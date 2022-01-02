@@ -1,36 +1,330 @@
 #include "ast.hpp"
 
+#include <algorithm>
+#include <filesystem>
+
+#include "exceptions.hpp"
+#include "invariant_types.hpp"
 #include "json_util.hpp"
+#include "type_builder.hpp"
 
 namespace acl {
 Scope::Scope(Scope* parentScope) : parentScope(parentScope) {}
 
 Scope::~Scope() {}
 
-void Scope::addSymbol(Symbol* symbol) {}
+void Scope::addSymbol(Symbol* symbol) {
+	bool isType = dynamic_cast<Type*>(symbol);
 
-void Scope::addType(Type* type) {}
+	for (const auto& s : symbols) {
+		if (((isType && dynamic_cast<Type*>(s)) || !dynamic_cast<Type*>(s)) &&
+			s->id->data == symbol->id->data)
+			throw AclException(ASP_CORE_UNKNOWN, symbol->id->meta,
+							   "Duplicate symbol");
+	}
 
-Symbol* Scope::resolveSymbol(const Token* id, Type* targetType,
-							 const List<Type*>& generics) {
-	return nullptr;	 // TODO: Implement this
+	symbols.push_back(symbol);
+
+	if (isType) types.push_back(dynamic_cast<Type*>(symbol));
 }
 
-Type* Scope::resolveType(const Token* id, const List<Type*>& generics) {
-	return nullptr;	 // TODO: Implement this
+namespace ResolveFlag {
+bool isLexicalOnly(int flags) {
+	return ((flags & LEXICAL) == LEXICAL) && ((flags & TYPE_HIERARCHY) == 0);
+}
+bool isTypeHierarchyOnly(int flags) {
+	return ((flags & LEXICAL) == 0) &&
+		   ((flags & TYPE_HIERARCHY) == TYPE_HIERARCHY);
+}
+bool hasRequireExactMatch(int flags) {
+	return (flags & REQUIRE_EXACT_MATCH) == REQUIRE_EXACT_MATCH;
+}
+bool hasRecursive(int flags) { return (flags & RECURSIVE) == RECURSIVE; }
+
+bool flagsAcceptSymbolType(int flags, Symbol* s) {
+	return (((flags & TARGET_TYPE) == TARGET_TYPE) && dynamic_cast<Type*>(s)) ||
+		   (((flags & TARGET_NAMESPACE) == TARGET_NAMESPACE) &&
+			(dynamic_cast<Namespace*>(s) || dynamic_cast<Import*>(s))) ||
+		   (((flags & TARGET_VARIABLE) == TARGET_VARIABLE) &&
+			(dynamic_cast<Variable*>(s) || dynamic_cast<Function*>(s)));
+}
+}  // namespace ResolveFlag
+
+namespace type {
+static int getTypeMatchScore0(Type** commonTypeDest, Type* a, Type* b,
+							  bool traceAll, bool traceB) {
+	if (a == b) {
+		// This could be set to a or b; it doesn't matter
+		if (commonTypeDest) *commonTypeDest = a;
+		return 0;
+	}
+
+	Type* commonTypeA = nullptr;
+	Type* commonTypeB = nullptr;
+	int minA = -1;
+	int minB = -1;
+
+	for (auto& p : a->parentTypes) {
+		Type* commonType = nullptr;
+		int s = getTypeMatchScore0(&commonType, getTypeForTypeRef(p), b,
+								   traceAll, false);
+		if (minA == -1 || s < minA) {
+			commonTypeA = commonType;
+			minA = s;
+		}
+	}
+
+	if (traceAll || traceB) {
+		for (auto& p : b->parentTypes) {
+			Type* commonType = nullptr;
+			int s = getTypeMatchScore0(&commonType, getTypeForTypeRef(p), a,
+									   traceAll, false);
+			if (minB == -1 || s < minB) {
+				commonTypeB = commonType;
+				minB = s;
+			}
+		}
+	}
+
+	if (minA > -1 && minB > -1) {
+		if (minB < minA) {
+			if (commonTypeDest) *commonTypeDest = commonTypeB;
+			return minB + 1;
+		} else {
+			if (commonTypeDest) *commonTypeDest = commonTypeA;
+			return minA + 1;
+		}
+	}
+
+	if (minA > -1) {
+		if (commonTypeDest) *commonTypeDest = commonTypeA;
+		return minA + 1;
+	}
+
+	if (minB > -1) {
+		if (commonTypeDest) *commonTypeDest = commonTypeB;
+		return minB + 1;
+	}
+
+	// TODO: Handle the case where at least one of the types is an InvariantType
+
+	return -1;
+}
+
+int getTypeMatchScore(Type** commonTypeDest, Type* a, Type* b, bool traceAll) {
+	return getTypeMatchScore0(commonTypeDest, a, b, traceAll, true);
+}
+
+Type* getTypeForTypeRef(TypeRef* tr) {
+	if (SimpleTypeRef* s = dynamic_cast<SimpleTypeRef*>(tr))
+		return dynamic_cast<Type*>(s->referent);
+	return nullptr;	 // TODO: Implement the rest
+}
+
+bool typesMatch(TypeRef* a, TypeRef* b) {
+	return getTypeMatchScore(nullptr, getTypeForTypeRef(a),
+							 getTypeForTypeRef(b), false) == 0;
+}
+
+bool typesAreCompatible(TypeRef* a, TypeRef* b) {
+	return getTypeMatchScore(nullptr, getTypeForTypeRef(a),
+							 getTypeForTypeRef(b), false) >= 0;
+}
+
+void getGenerics(List<GenericType*>& dest, Symbol* s) {
+	if (Function* f = dynamic_cast<Function*>(s)) {
+		dest.insert(dest.end(), f->generics.begin(), f->generics.end());
+	} else if (Type* t = dynamic_cast<Type*>(s)) {
+		dest.insert(dest.end(), t->generics.begin(), t->generics.end());
+	} else if (Namespace* n = dynamic_cast<Namespace*>(s)) {
+		dest.insert(dest.end(), n->generics.begin(), n->generics.end());
+	}
+}
+
+bool genericsAreCompatible(const List<TypeRef*>& supplied,
+						   const List<GenericType*>& target) {
+	if (supplied.size() > target.size()) return false;
+	for (int i = 0; i < supplied.size(); i++)
+		if (!genericAcceptsType(target[i], supplied[i])) return false;
+	return true;
+}
+
+bool genericAcceptsType(GenericType* g, TypeRef* t) {
+	auto gt = getTypeForGeneric(g);
+	auto tt = getTypeForTypeRef(t);
+	return getTypeMatchScore(nullptr, gt, tt, false) >= 0;
+}
+
+Type* getTypeForGeneric(GenericType* g) {
+	if (g->declaredParentType) return getTypeForTypeRef(g->declaredParentType);
+	return const_cast<bt::InvariantType*>(bt::ANY);
+}
+
+Type* getMinCommonType(Type* a, Type* b) {
+	Type* result = nullptr;
+	int score = getTypeMatchScore(&result, a, b, true);
+	if (score == -1)
+		// This error should never occur; all types have at least a min common
+		// type of "Any"
+		throw AclException(ASP_CORE_UNKNOWN, a->sourceMeta,
+						   "Incompatible types");
+	return result;
+}
+
+bool canCastTo(Type* src, Type* target) {
+	Type* dest = nullptr;
+	int score = getTypeMatchScore(&dest, src, target, false);
+	return score >= 0 && dest == target;
+}
+}  // namespace type
+
+static bool isObjectOrientedScope(Scope* scope) {
+	return dynamic_cast<Class*>(scope) || dynamic_cast<Struct*>(scope) ||
+		   dynamic_cast<Template*>(scope) || dynamic_cast<Enum*>(scope);
+}
+
+static bool hasStaticModifier(const List<Modifier*>& modifiers) {
+	for (const auto& m : modifiers) {
+		if (m->content->type == TokenType::STATIC) return true;
+	}
+	return false;
+}
+
+static bool isSymbolStatic(Symbol* s, bool checkModifierOnly = true) {
+	if (Variable* v = dynamic_cast<Variable*>(s))
+		return hasStaticModifier(v->modifiers);
+	if (Function* f = dynamic_cast<Function*>(s))
+		return hasStaticModifier(f->modifiers);
+	return !checkModifierOnly &&
+		   (dynamic_cast<Type*>(s) || dynamic_cast<Namespace*>(s) ||
+			dynamic_cast<Import*>(s));
+}
+
+static TypeRef* getTypeForSymbol(Symbol* s) {
+	if (Function* f = dynamic_cast<Function*>(s)) {
+		List<TypeRef*> paramTypes;
+		for (auto& p : f->parameters) {
+			if (p->declaredType)
+				paramTypes.push_back(p->declaredType);
+			else
+				paramTypes.push_back(
+					tb::base(const_cast<bt::InvariantType*>(bt::ANY), {},
+							 p->sourceMeta));
+		}
+		return tb::function(paramTypes, f->actualReturnType);
+	}
+
+	return dynamic_cast<Variable*>(s)->actualType;
+}
+
+void Scope::resolveSymbol(List<Symbol*>& dest, const Token* id,
+						  TypeRef* expectedType, const List<TypeRef*>& generics,
+						  int flags) {
+	for (auto& s : symbols) {
+		if ((isObjectOrientedScope(this) && !isSymbolStatic(s) &&
+			 ResolveFlag::isLexicalOnly(flags)) ||
+			(isSymbolStatic(s, false) &&
+			 ResolveFlag::isTypeHierarchyOnly(flags)))
+			continue;
+
+		List<GenericType*> genericTypes;
+		type::getGenerics(genericTypes, s);
+
+		if (ResolveFlag::flagsAcceptSymbolType(flags, s) &&
+			s->id->data == id->data &&
+			type::genericsAreCompatible(generics, genericTypes) &&
+			(!expectedType ||
+			 (ResolveFlag::hasRequireExactMatch(flags) &&
+			  type::typesMatch(getTypeForSymbol(s), expectedType)) ||
+			 (!ResolveFlag::hasRequireExactMatch(flags) &&
+			  type::typesAreCompatible(getTypeForSymbol(s), expectedType)))) {
+			dest.push_back(s);
+		}
+	}
+
+	if (ResolveFlag::hasRecursive(flags)) {
+		if (!ResolveFlag::isTypeHierarchyOnly(flags)) {
+			if (parentScope) {
+				try {
+					List<Symbol*> foundParentSymbols;
+					int parentFlags = flags;
+					parentFlags |= ResolveFlag::LEXICAL;
+					parentFlags &= ~ResolveFlag::TYPE_HIERARCHY;
+					parentScope->resolveSymbol(foundParentSymbols, id,
+											   expectedType, generics,
+											   parentFlags);
+
+					for (auto& s : foundParentSymbols) dest.push_back(s);
+				} catch (AclException& e) {
+				}
+			} else if (GlobalScope* gs = dynamic_cast<GlobalScope*>(this)) {
+				for (auto& imp : gs->imports) {
+					try {
+						List<Symbol*> foundImportSymbols;
+						int importFlags = flags;
+						importFlags &= ~ResolveFlag::RECURSIVE;
+						importFlags |= ResolveFlag::LEXICAL;
+						importFlags &= ~ResolveFlag::TYPE_HIERARCHY;
+						imp->referent->resolveSymbol(foundImportSymbols, id,
+													 expectedType, generics,
+													 importFlags);
+
+						for (auto& s : foundImportSymbols) dest.push_back(s);
+					} catch (AclException& e) {
+					}
+				}
+			}
+		}
+	}
+
+	if (!ResolveFlag::isLexicalOnly(flags)) {
+		if (Type* t = dynamic_cast<Type*>(this)) {
+			for (auto& parent : t->parentTypes) {
+				try {
+					auto type = type::getTypeForTypeRef(parent);
+					if (Scope* asScope = dynamic_cast<Scope*>(type)) {
+						List<Symbol*> foundParentSymbols;
+						int parentFlags = flags;
+						parentFlags |= ResolveFlag::LEXICAL;
+						parentFlags &= ~ResolveFlag::TYPE_HIERARCHY;
+						asScope->resolveSymbol(foundParentSymbols, id,
+											   expectedType, generics,
+											   parentFlags);
+
+						for (auto& s : foundParentSymbols) dest.push_back(s);
+					}
+				} catch (AclException& e) {
+				}
+			}
+		}
+	}
+
+	if (ResolveFlag::hasRequireExactMatch(flags) && dest.size() > 1)
+		throw AclException(ASP_CORE_UNKNOWN, id->meta,
+						   "Multiple symbols match the specified criteria");
+	if (dest.size() < 1)
+		throw AclException(ASP_CORE_UNKNOWN, id->meta, "Unresolved symbol");
+}
+
+bool hasCompatibleGenerics(const Type* type, const List<TypeRef*>& generics) {
+	// TODO: Implement this
+	return true;
 }
 
 Node::Node(const SourceMeta& sourceMeta) : sourceMeta(sourceMeta) {}
 
 Node::~Node() {}
 
-Ast::Ast(GlobalScope* globalScope) : globalScope(globalScope) {}
+Ast::Ast(GlobalScope* globalScope)
+	: globalScope(globalScope), stage(ResolutionStage::INITIAL_PASS) {}
 
 Ast::~Ast() { delete globalScope; }
 
 GlobalScope::GlobalScope(const SourceMeta& sourceMeta,
 						 const List<Node*>& content)
-	: Node(sourceMeta), Scope(nullptr), content(content) {}
+	: Symbol(new Token(TokenType::GLOBAL, "global", sourceMeta)),
+	  Scope(nullptr),
+	  content(content) {}
 
 GlobalScope::~GlobalScope() {
 	for (auto& c : content) delete c;
@@ -41,6 +335,24 @@ void GlobalScope::toJson(StringBuffer& dest) const {
 	json::appendList<Node*>(dest, content,
 							[](auto& d, const auto& e) { e->toJson(d); });
 	dest << "\n}";
+}
+
+void GlobalScope::addImport(Import* imp) {
+	if (!imp->alias)
+		throw AclException(ASP_CORE_UNKNOWN, imp->sourceMeta,
+						   "Import has no alias");
+	for (const auto& other : imports) {
+		if (other->alias->data == imp->alias->data)
+			throw AclException(ASP_CORE_UNKNOWN, imp->sourceMeta,
+							   "Duplicate import");
+	}
+	imports.push_back(imp);
+}
+
+Import* GlobalScope::resolveImport(Token* id) {
+	for (auto& imp : imports)
+		if (imp->alias->data == id->data) return imp;
+	throw AclException(ASP_CORE_UNKNOWN, id->meta, "Unresolved import");
 }
 
 TypeRef::TypeRef(const SourceMeta& sourceMeta) : Node(sourceMeta) {}
@@ -478,6 +790,7 @@ Function::Function(const List<Modifier*>& modifiers, Token* id,
 	  generics(generics),
 	  parameters(parameters),
 	  declaredReturnType(declaredReturnType),
+	  actualReturnType(nullptr),
 	  content(content) {}
 
 Function::~Function() {
@@ -485,6 +798,7 @@ Function::~Function() {
 	for (auto& c : generics) delete c;
 	for (auto& c : parameters) delete c;
 	delete declaredReturnType;
+	if (declaredReturnType != actualReturnType) delete actualReturnType;
 	for (auto& c : content) delete c;
 }
 
@@ -516,12 +830,14 @@ Variable::Variable(const List<Modifier*>& modifiers, Token* id,
 	: Symbol(id),
 	  modifiers(modifiers),
 	  declaredType(declaredType),
+	  actualType(nullptr),
 	  value(value),
 	  constant(constant) {}
 
 Variable::~Variable() {
 	for (auto& c : modifiers) delete c;
 	delete declaredType;
+	if (declaredType != actualType) delete actualType;
 	delete value;
 }
 
@@ -833,7 +1149,10 @@ void SetBlock::toJson(StringBuffer& dest) const {
 	json::appendList<Modifier*>(dest, modifiers,
 								[](auto& d, const auto& e) { e->toJson(d); });
 	dest << ",\n\"parameter\": ";
-	parameter->toJson(dest);
+	if (parameter)
+		parameter->toJson(dest);
+	else
+		dest << "null";
 	dest << ",\n\"content\": ";
 	json::appendList<Node*>(dest, content,
 							[](auto& d, const auto& e) { e->toJson(d); });
@@ -1166,12 +1485,33 @@ void ImportSource::toJson(StringBuffer& dest) const {
 	dest << "\n}";
 }
 
+static String formatImportAlias(const String& str) {
+	StringBuffer sb;
+	if (!isIdentifierStart(str[0]))
+		sb << '_';
+	else
+		sb << str[0];
+	for (int i = 1; i < str.length(); i++) {
+		if (!isIdentifierPart(str[i])) sb << '_';
+		sb << str[i];
+	}
+	String result = sb.str();
+	return result;
+}
+
+static Token* getImportAliasFromSource(ImportSource* src) {
+	if (src->content->type == TokenType::ID) return src->content;
+	const std::filesystem::path p = src->content->data;
+	return new Token(TokenType::ID,
+					 formatImportAlias(p.filename().stem().string()),
+					 src->content->meta);
+}
+
 Import::Import(ImportSource* source, Token* alias,
 			   const List<ImportTarget*>& targets)
-	: Node(source->sourceMeta),
-	  source(source),
-	  alias(alias),
-	  targets(targets) {}
+	: Symbol(source->content), source(source), alias(alias), targets(targets) {
+	if (!alias) this->alias = getImportAliasFromSource(source);
+}
 
 Import::~Import() {
 	delete source;
@@ -1236,6 +1576,15 @@ void WarningMetaDeclaration::toJson(StringBuffer& dest) const {
 	else
 		dest << "null";
 	dest << "\n}";
+}
+
+bool isFunctionScope(const Scope* scope) {
+	return dynamic_cast<const Function*>(scope) ||
+		   dynamic_cast<const FunctionBlock*>(scope) ||
+		   dynamic_cast<const LambdaExpression*>(scope) ||
+		   dynamic_cast<const SetBlock*>(scope) ||
+		   dynamic_cast<const Constructor*>(scope) ||
+		   dynamic_cast<const Destructor*>(scope);
 }
 
 }  // namespace acl

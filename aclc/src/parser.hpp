@@ -34,13 +34,16 @@ class Parser {
 	// if only one character can be a token, it will be matched as such.
 	Token* relex();
 
+	void popScope();
+
    public:
 	Parser(CompilerContext& ctx, Lexer&& lexer);
 	~Parser();
 	Ast* parse();
 
    private:
-	Function* parseFunction(const TokenType* modifiersArray, int modifiersLen);
+	Function* parseFunction(const TokenType* modifiersArray, int modifiersLen,
+							bool allowOperatorIds);
 	WarningMetaDeclaration* parseGlobalWarningMeta();
 	Variable* parseNonClassVariable(const TokenType* modifiersArray,
 									int modifiersLen);
@@ -171,6 +174,7 @@ bool isPostfixOperator(TokenType type);
 bool isAccessOperator(TokenType type);
 bool isCallOperator(TokenType type);
 bool isLiteral(TokenType type);
+bool isFunctionOperator(TokenType type);
 
 // This includes modifiers for constants too
 bool isLocalVariableModifier(TokenType type);
