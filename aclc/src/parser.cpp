@@ -392,6 +392,23 @@ const acl::TokenType INIT_BLOCK_MODIFIERS[INIT_BLOCK_MODIFIERS_LEN] = {
 }  // namespace
 
 namespace acl {
+void getTypesForPanicTerminator(PanicTerminator terminator,
+								List<TokenType>& dest) {
+	switch (terminator) {
+		case PanicTerminator::BLOCK_END:
+			dest.push_back(TokenType::RBRACE);
+			break;
+		case PanicTerminator::STATEMENT_END:
+			dest.push_back(TokenType::NL);
+			dest.push_back(TokenType::SEMICOLON);
+			dest.push_back(TokenType::EOF_TOKEN);
+			dest.push_back(TokenType::RBRACE);
+			break;
+		default:
+			break;
+	}
+}
+
 Token* Parser::lh(int pos) {
 	sync(pos);
 	return buffer[current + pos];
@@ -470,6 +487,15 @@ void Parser::fill(int n) {
 	}
 }
 
+void Parser::panic(PanicTerminator terminator) {
+	List<TokenType> targetTypes;
+	getTypesForPanicTerminator(terminator, targetTypes);
+	while (hasNext() && !listContains(targetTypes, lh(0)->type)) advance();
+	panicking = true;
+	panicTerminator = terminator;
+	didPanic = true;
+}
+
 Token* Parser::relex() {
 	List<Token*> newTokens;
 	Relexer(lh(0)).relex(newTokens);
@@ -500,7 +526,12 @@ void Parser::popScope() {
 }
 
 Parser::Parser(CompilerContext& ctx, Lexer&& lexer)
-	: ctx(ctx), lexer(lexer), current(0), currentScope(nullptr) {}
+	: ctx(ctx),
+	  lexer(lexer),
+	  current(0),
+	  currentScope(nullptr),
+	  panicking(false),
+	  didPanic(false) {}
 
 Parser::~Parser() {}
 
@@ -512,78 +543,100 @@ Ast* Parser::parse() {
 
 	skipNewlines(true);
 	while (hasNext()) {
-		auto content = parseGlobalContent();
-		if (Import* imp = dynamic_cast<Import*>(content)) {
-			globalScope->addImport(imp);
-		} else
-			globalScope->content.push_back(content);
+		try {
+			auto content = parseGlobalContent();
+			if (Import* imp = dynamic_cast<Import*>(content)) {
+				globalScope->addImport(imp);
+			} else
+				globalScope->content.push_back(content);
+		} catch (ParserPanicException& e) {
+			panicking = false;
+
+			if (lh(0)->type == TokenType::RBRACE) advance();
+		}
+
 		skipNewlines(true);
 	}
+
+	if (didPanic)
+		throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta, "Parser errors");
 
 	return new Ast(globalScope);
 }
 
 Node* Parser::parseGlobalContent() {
-	skipNewlines(true);
+	try {
+		skipNewlines(true);
 
-	auto t = lh(0);
-	int current = 0;
-	while (isModifier(t->type) || t->type == TokenType::NL) {
-		if (t->type == TokenType::META_ENABLEWARNING ||
-			t->type == TokenType::META_DISABLEWARNING) {
-			// 3 for keyword, lparen, and initial string literal
-			current += 3;
+		auto t = lh(0);
+		int current = 0;
+		while (isModifier(t->type) || t->type == TokenType::NL) {
+			if (t->type == TokenType::META_ENABLEWARNING ||
+				t->type == TokenType::META_DISABLEWARNING) {
+				// 3 for keyword, lparen, and initial string literal
+				current += 3;
 
-			// 2 for comma and next string literal
-			while (lh(current)->type == TokenType::COMMA) current += 2;
+				// 2 for comma and next string literal
+				while (lh(current)->type == TokenType::COMMA) current += 2;
 
-			t = lh(++current);
-		} else
-			t = lh(++current);
+				t = lh(++current);
+			} else
+				t = lh(++current);
+		}
+
+		if (t->type == TokenType::FUN)
+			return parseFunction(GLOBAL_FUNCTION_MODIFIERS,
+								 GLOBAL_FUNCTION_MODIFIERS_LEN, false);
+		else if (t->type == TokenType::META_ENABLEWARNING ||
+				 t->type == TokenType::META_DISABLEWARNING)
+			return parseGlobalWarningMeta();
+		else if (t->type == TokenType::META_NOBUILTINS) {
+			advance();
+			parseNewlineEquiv();
+			return new MetaDeclaration(t);
+		} else if (t->type == TokenType::VAR)
+			return parseNonClassVariable(GLOBAL_VARIABLE_MODIFIERS,
+										 GLOBAL_VARIABLE_MODIFIERS_LEN);
+		else if (t->type == TokenType::CONST)
+			return parseNonClassConstant(GLOBAL_VARIABLE_MODIFIERS,
+										 GLOBAL_VARIABLE_MODIFIERS_LEN);
+		else if (t->type == TokenType::ALIAS)
+			return parseAlias(GLOBAL_ALIAS_MODIFIERS,
+							  GLOBAL_ALIAS_MODIFIERS_LEN);
+		else if (t->type == TokenType::CLASS)
+			return parseClass(GLOBAL_CLASS_MODIFIERS,
+							  GLOBAL_CLASS_MODIFIERS_LEN);
+		else if (t->type == TokenType::STRUCT)
+			return parseStruct(GLOBAL_STRUCT_MODIFIERS,
+							   GLOBAL_STRUCT_MODIFIERS_LEN);
+		else if (t->type == TokenType::TEMPLATE)
+			return parseTemplate(GLOBAL_TEMPLATE_MODIFIERS,
+								 GLOBAL_TEMPLATE_MODIFIERS_LEN);
+		else if (t->type == TokenType::ENUM)
+			return parseEnum(GLOBAL_ENUM_MODIFIERS, GLOBAL_ENUM_MODIFIERS_LEN);
+		else if (t->type == TokenType::NAMESPACE)
+			return parseNamespace(GLOBAL_NAMESPACE_MODIFIERS,
+								  GLOBAL_NAMESPACE_MODIFIERS_LEN);
+		else if (t->type == TokenType::IMPORT) {
+			auto result = parseImport();
+			dynamic_cast<GlobalScope*>(currentScope)->addImport(result);
+			return result;
+		} else if (t->type == TokenType::META_SRCLOCK)
+			return parseSourceLock(
+				dynamic_cast<GlobalScope*>(currentScope)->content);
+		StringBuffer sb;
+		sb << "Invalid token [" << (int)t->type << "] in global scope";
+		String s = sb.str();
+		throw AclException(ASP_GLOBAL_SCOPE, t->meta, s);
+	} catch (AclException& e) {
+		String msg = e.what();
+		warn(msg);
+		panic(PanicTerminator::STATEMENT_END);
+
+		// This statement will never execute because panic() always throws.
+		// It's here to shut the compiler up.
+		return nullptr;
 	}
-
-	if (t->type == TokenType::FUN)
-		return parseFunction(GLOBAL_FUNCTION_MODIFIERS,
-							 GLOBAL_FUNCTION_MODIFIERS_LEN, false);
-	else if (t->type == TokenType::META_ENABLEWARNING ||
-			 t->type == TokenType::META_DISABLEWARNING)
-		return parseGlobalWarningMeta();
-	else if (t->type == TokenType::META_NOBUILTINS) {
-		advance();
-		parseNewlineEquiv();
-		return new MetaDeclaration(t);
-	} else if (t->type == TokenType::VAR)
-		return parseNonClassVariable(GLOBAL_VARIABLE_MODIFIERS,
-									 GLOBAL_VARIABLE_MODIFIERS_LEN);
-	else if (t->type == TokenType::CONST)
-		return parseNonClassConstant(GLOBAL_VARIABLE_MODIFIERS,
-									 GLOBAL_VARIABLE_MODIFIERS_LEN);
-	else if (t->type == TokenType::ALIAS)
-		return parseAlias(GLOBAL_ALIAS_MODIFIERS, GLOBAL_ALIAS_MODIFIERS_LEN);
-	else if (t->type == TokenType::CLASS)
-		return parseClass(GLOBAL_CLASS_MODIFIERS, GLOBAL_CLASS_MODIFIERS_LEN);
-	else if (t->type == TokenType::STRUCT)
-		return parseStruct(GLOBAL_STRUCT_MODIFIERS,
-						   GLOBAL_STRUCT_MODIFIERS_LEN);
-	else if (t->type == TokenType::TEMPLATE)
-		return parseTemplate(GLOBAL_TEMPLATE_MODIFIERS,
-							 GLOBAL_TEMPLATE_MODIFIERS_LEN);
-	else if (t->type == TokenType::ENUM)
-		return parseEnum(GLOBAL_ENUM_MODIFIERS, GLOBAL_ENUM_MODIFIERS_LEN);
-	else if (t->type == TokenType::NAMESPACE)
-		return parseNamespace(GLOBAL_NAMESPACE_MODIFIERS,
-							  GLOBAL_NAMESPACE_MODIFIERS_LEN);
-	else if (t->type == TokenType::IMPORT) {
-		auto result = parseImport();
-		dynamic_cast<GlobalScope*>(currentScope)->addImport(result);
-		return result;
-	} else if (t->type == TokenType::META_SRCLOCK)
-		return parseSourceLock(
-			dynamic_cast<GlobalScope*>(currentScope)->content);
-	StringBuffer sb;
-	sb << "Invalid token [" << (int)t->type << "] in global scope";
-	String s = sb.str();
-	throw AclException(ASP_GLOBAL_SCOPE, t->meta, s);
 }
 
 Function* Parser::parseFunction(const TokenType* modifiersArray,
@@ -2281,72 +2334,88 @@ FunctionBlock* Parser::parseFunctionBlock() {
 void Parser::parseFunctionBlockContent(List<Node*>& dest) {
 	skipNewlines(true);
 	while (lh(0)->type != TokenType::RBRACE) {
-		dest.push_back(parseSingleFunctionBlockContent());
+		try {
+			dest.push_back(parseSingleFunctionBlockContent());
+		} catch (ParserPanicException& e) {
+			panicking = false;
+		}
 		skipNewlines(true);
 	}
 }
 
 Node* Parser::parseSingleFunctionBlockContent() {
-	auto t = lh(0);
-	if (t->type == TokenType::IF) {
-		return parseIfBlock();
-	} else if (t->type == TokenType::WHILE) {
-		return parseWhileBlock();
-	} else if (t->type == TokenType::REPEAT) {
-		return parseRepeatBlock();
-	} else if (t->type == TokenType::FOR) {
-		return parseForBlock();
-	} else if (t->type == TokenType::SWITCH) {
-		return parseSwitchBlock();
-	} else if (t->type == TokenType::TRY) {
-		return parseTryBlock();
-	} else if (t->type == TokenType::LBRACE) {
-		return parseFunctionBlock();
-	} else if (t->type == TokenType::BREAK || t->type == TokenType::CONTINUE ||
-			   t->type == TokenType::FALL) {
-		advance();
-		parseNewlineEquiv();
-		return new SingleTokenStatement(t);
-	} else if (t->type == TokenType::VAR) {
-		return parseLocalVariable();
-	} else if (t->type == TokenType::CONST) {
-		return parseLocalConstant();
-	} else if (t->type == TokenType::ALIAS) {
-		return parseAlias(LOCAL_ALIAS_MODIFIERS, LOCAL_ALIAS_MODIFIERS_LEN);
-	} else if (isModifier(t->type)) {
-		// lookahead to var or const keyword
-		int current = 0;
-		while (isModifier(t->type) || t->type == TokenType::NL) {
-			if (t->type == TokenType::META_ENABLEWARNING ||
-				t->type == TokenType::META_DISABLEWARNING) {
-				// 3 for keyword, lparen, and initial string literal
-				current += 3;
-
-				// 2 for comma and next string literal
-				while (lh(current)->type == TokenType::COMMA) current += 2;
-
-				t = lh(++current);
-			} else
-				t = lh(++current);
-		}
-		if (t->type == TokenType::CONST)
-			return parseLocalConstant();
-		else if (t->type == TokenType::VAR)
+	try {
+		auto t = lh(0);
+		if (t->type == TokenType::IF) {
+			return parseIfBlock();
+		} else if (t->type == TokenType::WHILE) {
+			return parseWhileBlock();
+		} else if (t->type == TokenType::REPEAT) {
+			return parseRepeatBlock();
+		} else if (t->type == TokenType::FOR) {
+			return parseForBlock();
+		} else if (t->type == TokenType::SWITCH) {
+			return parseSwitchBlock();
+		} else if (t->type == TokenType::TRY) {
+			return parseTryBlock();
+		} else if (t->type == TokenType::LBRACE) {
+			return parseFunctionBlock();
+		} else if (t->type == TokenType::BREAK ||
+				   t->type == TokenType::CONTINUE ||
+				   t->type == TokenType::FALL) {
+			advance();
+			parseNewlineEquiv();
+			return new SingleTokenStatement(t);
+		} else if (t->type == TokenType::VAR) {
 			return parseLocalVariable();
-		else if (t->type == TokenType::ALIAS)
+		} else if (t->type == TokenType::CONST) {
+			return parseLocalConstant();
+		} else if (t->type == TokenType::ALIAS) {
 			return parseAlias(LOCAL_ALIAS_MODIFIERS, LOCAL_ALIAS_MODIFIERS_LEN);
-		return parseFunctionBlock();
-	} else if (t->type == TokenType::THROW) {
-		return parseThrowStatement();
-	} else if (t->type == TokenType::RETURN) {
-		return parseReturnStatement();
-	} else if (t->type == TokenType::META_ENABLEWARNING ||
-			   t->type == TokenType::META_DISABLEWARNING) {
-		return parseLocalWarningMeta();
+		} else if (isModifier(t->type)) {
+			// lookahead to var or const keyword
+			int current = 0;
+			while (isModifier(t->type) || t->type == TokenType::NL) {
+				if (t->type == TokenType::META_ENABLEWARNING ||
+					t->type == TokenType::META_DISABLEWARNING) {
+					// 3 for keyword, lparen, and initial string literal
+					current += 3;
+
+					// 2 for comma and next string literal
+					while (lh(current)->type == TokenType::COMMA) current += 2;
+
+					t = lh(++current);
+				} else
+					t = lh(++current);
+			}
+			if (t->type == TokenType::CONST)
+				return parseLocalConstant();
+			else if (t->type == TokenType::VAR)
+				return parseLocalVariable();
+			else if (t->type == TokenType::ALIAS)
+				return parseAlias(LOCAL_ALIAS_MODIFIERS,
+								  LOCAL_ALIAS_MODIFIERS_LEN);
+			return parseFunctionBlock();
+		} else if (t->type == TokenType::THROW) {
+			return parseThrowStatement();
+		} else if (t->type == TokenType::RETURN) {
+			return parseReturnStatement();
+		} else if (t->type == TokenType::META_ENABLEWARNING ||
+				   t->type == TokenType::META_DISABLEWARNING) {
+			return parseLocalWarningMeta();
+		}
+		auto result = parseExpression();
+		parseNewlineEquiv();
+		return result;
+	} catch (AclException& e) {
+		String msg = e.what();
+		warn(msg);
+		panic(PanicTerminator::STATEMENT_END);
+
+		// This statement will never execute because panic() always throws.
+		// It's here to shut the compiler up.
+		return nullptr;
 	}
-	auto result = parseExpression();
-	parseNewlineEquiv();
-	return result;
 }
 
 IfBlock* Parser::parseIfBlock() {

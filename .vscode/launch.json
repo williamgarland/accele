@@ -11,8 +11,8 @@
             "program": "${workspaceFolder}/aclc/test/aclc",
             "args": [
                 "${workspaceFolder}/aclc/test/test.accele",
-                "--dump-ast",
-                "${workspaceFolder}/aclc/test/ast.json"
+                /*"--dump-ast",
+                "${workspaceFolder}/aclc/test/ast.json"*/
             ],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

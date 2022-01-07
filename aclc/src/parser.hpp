@@ -7,6 +7,11 @@
 #include "lexer.hpp"
 
 namespace acl {
+enum class PanicTerminator { BLOCK_END, STATEMENT_END };
+
+void getTypesForPanicTerminator(PanicTerminator terminator,
+								List<TokenType>& dest);
+
 class Parser {
 	Lexer lexer;
 	List<Token*> buffer;
@@ -15,6 +20,9 @@ class Parser {
 	CompilerContext& ctx;
 	Scope* currentScope;
 	std::deque<List<Token*>> queuedDeletedTokens;
+	bool panicking;
+	PanicTerminator panicTerminator;
+	bool didPanic;
 
    private:
 	Token* lh(int pos);
@@ -35,6 +43,7 @@ class Parser {
 	Token* relex();
 
 	void popScope();
+	void panic(PanicTerminator terminator);
 
    public:
 	Parser(CompilerContext& ctx, Lexer&& lexer);

@@ -62,6 +62,12 @@ class ParserException : public AclException {
 	virtual ~ParserException();
 };
 
+class ParserPanicException : public ParserException {
+   public:
+	ParserPanicException();
+	virtual ~ParserPanicException();
+};
+
 enum class TokenType;
 struct Token;
 

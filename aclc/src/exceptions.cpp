@@ -45,6 +45,11 @@ ParserException::ParserException(const SourceMeta& meta, const String& message)
 
 ParserException::~ParserException() {}
 
+ParserPanicException::ParserPanicException()
+	: ParserException(SourceMeta{"(ERR)", -1, -1}, "Parser panic exception") {}
+
+ParserPanicException::~ParserPanicException() {}
+
 TokenMismatchException::TokenMismatchException(TokenType expected,
 											   Token* received)
 	: ParserException(received->meta, "") {
