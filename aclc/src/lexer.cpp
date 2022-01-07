@@ -565,4 +565,47 @@ int getStringBufferLength(StringBuffer& buf) {
 	buf.seekg(0, std::ios::beg);
 	return len;
 }
+
+Relexer::Relexer(Token* originalToken) : originalToken(originalToken) {}
+
+void Relexer::tryLex(const String& str, List<Token*>& dest) {
+	StringBuffer buf;
+	buf << str;
+	Lexer lexer = Lexer("<internal>", buf);
+	while (lexer.hasNext()) {
+		try {
+			dest.push_back(lexer.nextToken());
+		} catch (AclException& e) {
+			dest.clear();
+			return;
+		}
+	}
+}
+
+Token* Relexer::formatToken(Token* t, int start) {
+	t->meta.file = originalToken->meta.file;
+	t->meta.line = originalToken->meta.line;
+	t->meta.col = originalToken->meta.col + start;
+	return t;
+}
+
+void Relexer::relexHelper(int current, List<Token*>& dest) {
+	int start = current;
+	StringBuffer sb;
+	sb << originalToken->data[current++];
+	List<Token*> tmp;
+	tryLex(sb.str(), tmp);
+	while (tmp.empty() && current < originalToken->data.length()) {
+		sb << originalToken->data[current++];
+		tryLex(sb.str(), tmp);
+	}
+	if (tmp.empty()) {
+		dest.clear();
+		return;
+	}
+	for (auto& t : tmp) dest.push_back(formatToken(t, start));
+	if (current < originalToken->data.length()) relexHelper(current, dest);
+}
+
+void Relexer::relex(List<Token*>& dest) { relexHelper(0, dest); }
 }  // namespace acl

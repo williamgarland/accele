@@ -211,6 +211,18 @@ class Lexer {
 	bool hasNext() const;
 };
 
+class Relexer {
+	Token* originalToken;
+
+	void tryLex(const String& str, List<Token*>& dest);
+	Token* formatToken(Token* t, int start);
+	void relexHelper(int current, List<Token*>& dest);
+
+   public:
+	Relexer(Token* originalToken);
+	void relex(List<Token*>& dest);
+};
+
 bool isOctalDigit(int c);
 bool isBinaryDigit(int c);
 bool isSimpleEscapeCharacter(int c);

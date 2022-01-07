@@ -471,7 +471,17 @@ void Parser::fill(int n) {
 }
 
 Token* Parser::relex() {
-	return nullptr;	 // TODO: Implement this
+	List<Token*> newTokens;
+	Relexer(lh(0)).relex(newTokens);
+
+	if (newTokens.empty()) {
+		return lh(0);  // We couldn't relex it, so just return the current token
+	}
+
+	buffer.erase(buffer.begin() + current);
+	buffer.insert(buffer.begin() + current, newTokens.begin(), newTokens.end());
+
+	return newTokens[0];
 }
 
 void Parser::popScope() {
