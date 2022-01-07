@@ -3,83 +3,99 @@
 #include <deque>
 
 #include "ast.hpp"
+#include "common.hpp"
 
 namespace acl {
-class Resolver {
-	Ast* ast;
-	Scope* currentScope;
-	std::deque<Scope*> scopeStack;
+enum class SearchTarget { VARIABLE, TYPE, NAMESPACE };
 
-	void pushScope(Scope* newScope);
-	void popScope();
+struct SearchCriteria {
+	bool recursive;
+	bool allowExternal;
+	List<SearchTarget> targets;
+	bool requireExactMatch;
+
+	// For when you're searching for an lvalue as opposed to an rvalue
+	bool modifiable;
+};
+
+class Resolver {
+	std::deque<Scope*> scopes;
+	std::deque<Scope*> lexicalScopes;
+	Ast* ast;
+	ResolutionStage maxStage;
+
+	void pushScope(Scope* scope, bool isLexicalScope);
+	Scope* peekScope();
+	Scope* popScope();
+	Scope* getLexicalScope();
 
    public:
 	Resolver(Ast* ast);
+	Resolver(Ast* ast, ResolutionStage maxStage);
 	void resolve();
-	void resolveGlobalScope(GlobalScope* scope);
-	void resolveNonLocalContent(Node* content);
-	void resolveLocalContent(Node* content);
-	void resolveImport(Import* i);
-	void resolveAlias(Alias* alias);
-	void resolveGenericType(GenericType* type);
-	void resolveClass(Class* c);
-	void resolveStruct(Struct* s);
-	void resolveTemplate(Template* t);
-	void resolveEnum(Enum* e);
+
+   private:
+	// ----- General ----- //
+	void resolveNonLocalContent(Node* n);
+	void resolveClass(Class* n);
+	void resolveStruct(Struct* n);
+	void resolveTemplate(Template* n);
+	void resolveEnum(Enum* n);
 	void resolveNamespace(Namespace* n);
-	void resolveFunctionScope(LambdaExpression* scope);
-	void resolveFunctionScope(FunctionBlock* scope);
-	void resolveFunctionScope(Function* scope);
-	void resolveFunctionScope(SetBlock* scope);
-	void resolveFunctionScope(Constructor* scope);
-	void resolveFunctionScope(Destructor* scope);
-	void resolveParameter(Parameter* parameter);
-	void resolveVariable(Variable* variable);
-	void resolveTypeRef(TypeRef* typeRef);
-	void resolveSimpleTypeRef(SimpleTypeRef* typeRef);
+	void resolveAlias(Alias* n);
+	void resolveConstructor(Constructor* n);
+	void resolveVariable(Variable* n);
+	void resolveEnumCase(EnumCase* n);
+	void resolveFunction(Function* n);
+	void resolveGenericType(GenericType* n);
 
-	void resolveExpression(Expression* expression,
-						   int symbolSearchFlags = ResolveFlag::RECURSIVE |
-												   ResolveFlag::LEXICAL |
-												   ResolveFlag::TYPE_HIERARCHY);
-	void resolveBinaryExpression(BinaryExpression* expression,
-								 int symbolSearchFlags);
-	void resolvePrefixExpression(UnaryPrefixExpression* expression);
-	void resolvePostfixExpression(UnaryPostfixExpression* expression);
-	void resolveTernaryExpression(TernaryExpression* expression);
-	void resolveFunctionCallExpression(FunctionCallExpression* expression);
-	void resolveSubscriptExpression(SubscriptExpression* expression);
-	void resolveCastingExpression(CastingExpression* expression);
-	void resolveMapLiteralExpression(MapLiteralExpression* expression);
-	void resolveArrayLiteralExpression(ArrayLiteralExpression* expression);
-	void resolveTupleLiteralExpression(TupleLiteralExpression* expression);
-	void resolveLiteralExpression(LiteralExpression* expression);
-	void resolveIdentifierExpression(IdentifierExpression* expression,
-									 int symbolSearchFlags);
-	void resolveLambdaExpression(LambdaExpression* expression);
+	// "intendedType" is for things like for-loops
+	void resolveParameter(Parameter* n, TypeRef* intendedType);
+	void resolveLocalContent(Node* n, TypeRef** destReturnType);
+	void resolveFunctionBlock(FunctionBlock* n, TypeRef** destReturnType);
+	void resolveIfBlock(IfBlock* n, TypeRef** destReturnType);
+	void resolveWhileBlock(WhileBlock* n, TypeRef** destReturnType);
+	void resolveRepeatBlock(RepeatBlock* n, TypeRef** destReturnType);
+	void resolveForBlock(ForBlock* n, TypeRef** destReturnType);
+	void resolveSwitchBlock(SwitchBlock* n, TypeRef** destReturnType);
+	void resolveTryBlock(TryBlock* n, TypeRef** destReturnType);
+	void resolveReturnStatement(ReturnStatement* n, TypeRef** destReturnType);
+	void resolveThrowStatement(ThrowStatement* n);
 
-	void resolveExpressionExpectSymbols(
-		IdentifierExpression** dest, Expression* expression,
-		int symbolSearchFlags = ResolveFlag::RECURSIVE | ResolveFlag::LEXICAL |
-								ResolveFlag::TYPE_HIERARCHY);
-	void resolveBinaryExpressionExpectSymbols(IdentifierExpression** dest,
-											  BinaryExpression* expression,
-											  int symbolSearchFlags);
-	void resolveIdentifierExpressionExpectSymbols(
-		IdentifierExpression** dest, IdentifierExpression* expression,
-		int symbolSearchFlags);
+	// ----- TypeRef ----- //
+	void resolveTypeRef(TypeRef* n);
+	void resolveSimpleTypeRef(SimpleTypeRef* n);
+	Scope* resolveSimpleTypeRefParent(SimpleTypeRef* n);
+	void resolveArrayTypeRef(ArrayTypeRef* n);
+	void resolveMapTypeRef(MapTypeRef* n);
+	void resolveTupleTypeRef(TupleTypeRef* n);
+	void resolveFunctionTypeRef(FunctionTypeRef* n);
+	void resolveSuffixTypeRef(SuffixTypeRef* n);
 
-	Symbol* resolveFunctionCallSymbols(FunctionCallExpression* expression,
-									   const List<TypeRef*>& argTypes,
-									   const List<Symbol*>& symbols);
+	// ----- Expression ----- //
+	void resolveExpression(Expression* n);
+	void resolveExpression0(Expression* n, const SearchCriteria* searchCriteria,
+							IdentifierExpression** dest);
+	void resolveFunctionCallExpression(FunctionCallExpression* n,
+									   const SearchCriteria* searchCriteria);
+	void resolveTernaryExpression(TernaryExpression* n);
+	void resolveBinaryExpression(BinaryExpression* n,
+								 const SearchCriteria* searchCriteria,
+								 IdentifierExpression** dest);
+	void resolveAccessExpression(BinaryExpression* n,
+								 const SearchCriteria* searchCriteria,
+								 IdentifierExpression** dest);
+	void resolvePrefixExpression(UnaryPrefixExpression* n);
+	void resolvePostfixExpression(UnaryPostfixExpression* n);
+	void resolveSubscriptExpression(SubscriptExpression* n);
+	void resolveIdentifierExpression(IdentifierExpression* n,
+									 const SearchCriteria* searchCriteria,
+									 IdentifierExpression** dest);
+	void resolveArrayLiteralExpression(ArrayLiteralExpression* n);
+	void resolveMapLiteralExpression(MapLiteralExpression* n);
+	void resolveTupleLiteralExpression(TupleLiteralExpression* n);
+	void resolveLiteralExpression(LiteralExpression* n);
+	void resolveLambdaExpression(LambdaExpression* n);
+	void resolveCastingExpression(CastingExpression* n);
 };
-
-Scope* getScopeForIdentifierExpression(IdentifierExpression* expression);
-Scope* getScopeForTypeRef(TypeRef* t);
-int getFunctionTypeScoreForArgs(FunctionTypeRef* t,
-								const List<TypeRef*>& argTypes);
-bool isVariadicType(TypeRef* t);
-
-// WARNING: This will heap-allocate a new FunctionTypeRef!
-FunctionTypeRef* getFunctionTypeForFunction(Function* f);
 }  // namespace acl

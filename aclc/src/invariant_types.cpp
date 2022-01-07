@@ -72,8 +72,29 @@ static const InvariantType T_BOOL = InvariantType(
 static const InvariantType T_STRING = InvariantType(
 	"String",
 	{tb::base(const_cast<InvariantType*>(&T_ANY), {}, T_ANY.sourceMeta)});
-static const InvariantType T_VOID = InvariantType(
-	"Void",
+static const InvariantType T_VOID =
+	InvariantType("Void", {});	// TODO: Not sure whether this needs to have a
+								// parent type of "Any"...
+static const InvariantType T_ARRAY = InvariantType(
+	"Array",
+	{tb::base(const_cast<InvariantType*>(&T_ANY), {}, T_ANY.sourceMeta)});
+static const InvariantType T_MAP = InvariantType(
+	"Map",
+	{tb::base(const_cast<InvariantType*>(&T_ANY), {}, T_ANY.sourceMeta)});
+static const InvariantType T_TUPLE = InvariantType(
+	"Tuple",
+	{tb::base(const_cast<InvariantType*>(&T_ANY), {}, T_ANY.sourceMeta)});
+static const InvariantType T_FUNCTION = InvariantType(
+	"Function",
+	{tb::base(const_cast<InvariantType*>(&T_ANY), {}, T_ANY.sourceMeta)});
+static const InvariantType T_OPTIONAL = InvariantType(
+	"Optional",
+	{tb::base(const_cast<InvariantType*>(&T_ANY), {}, T_ANY.sourceMeta)});
+static const InvariantType T_UNWRAPPED_OPTIONAL = InvariantType(
+	"UnwrappedOptional",
+	{tb::base(const_cast<InvariantType*>(&T_ANY), {}, T_ANY.sourceMeta)});
+static const InvariantType T_POINTER = InvariantType(
+	"Pointer",
 	{tb::base(const_cast<InvariantType*>(&T_ANY), {}, T_ANY.sourceMeta)});
 
 const InvariantType* ANY = &T_ANY;
@@ -94,12 +115,22 @@ const InvariantType* FLOAT80 = &T_FLOAT80;
 const InvariantType* BOOL = &T_BOOL;
 const InvariantType* STRING = &T_STRING;
 const InvariantType* VOID = &T_VOID;
+const InvariantType* ARRAY = &T_ARRAY;
+const InvariantType* MAP = &T_MAP;
+const InvariantType* TUPLE = &T_TUPLE;
+const InvariantType* FUNCTION = &T_FUNCTION;
+const InvariantType* OPTIONAL = &T_OPTIONAL;
+const InvariantType* UNWRAPPED_OPTIONAL = &T_UNWRAPPED_OPTIONAL;
+const InvariantType* POINTER = &T_POINTER;
 
-static constexpr int T_INVARIANTS_LEN = 18;
+static constexpr int T_INVARIANTS_LEN = 25;
 
 static const InvariantType* T_INVARIANTS[T_INVARIANTS_LEN] = {
-	ANY,	NUMBER, INT,	INT8,  INT16,  INT32,	INT64, UINT,   UINT8,
-	UINT16, UINT32, UINT64, FLOAT, DOUBLE, FLOAT80, BOOL,  STRING, VOID};
+	ANY,	NUMBER, INT,	 INT8,	   INT16,	 INT32,
+	INT64,	UINT,	UINT8,	 UINT16,   UINT32,	 UINT64,
+	FLOAT,	DOUBLE, FLOAT80, BOOL,	   STRING,	 VOID,
+	ARRAY,	MAP,	TUPLE,	 FUNCTION, OPTIONAL, UNWRAPPED_OPTIONAL,
+	POINTER};
 
 bool isInvariantType(const String& id) {
 	for (int i = 0; i < T_INVARIANTS_LEN; i++)
@@ -107,12 +138,9 @@ bool isInvariantType(const String& id) {
 	return false;
 }
 
-const InvariantType* resolveInvariantType(const Token* id,
-										  const List<TypeRef*>& generics) {
+const InvariantType* resolveInvariantType(const Token* id) {
 	for (int i = 0; i < T_INVARIANTS_LEN; i++)
-		if (T_INVARIANTS[i]->id->data == id->data &&
-			hasCompatibleGenerics(T_INVARIANTS[i], generics))
-			return T_INVARIANTS[i];
+		if (T_INVARIANTS[i]->id->data == id->data) return T_INVARIANTS[i];
 	throw AclException(ASP_CORE_UNKNOWN, id->meta, "Unresolved symbol");
 }
 }  // namespace bt

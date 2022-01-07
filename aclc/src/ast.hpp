@@ -9,22 +9,6 @@ struct Type;
 struct TypeRef;
 struct GenericType;
 
-namespace ResolveFlag {
-constexpr int TARGET_TYPE = 0x1;
-constexpr int TARGET_VARIABLE = 0x2;
-constexpr int TARGET_NAMESPACE = 0x4;
-constexpr int REQUIRE_EXACT_MATCH = 0x8;
-constexpr int RECURSIVE = 0x10;
-constexpr int LEXICAL = 0x20;
-constexpr int TYPE_HIERARCHY = 0x40;
-
-bool isLexicalOnly(int flags);
-bool isTypeHierarchyOnly(int flags);
-bool hasRequireExactMatch(int flags);
-bool hasRecursive(int flags);
-bool flagsAcceptSymbolType(int flags, Symbol* s);
-}  // namespace ResolveFlag
-
 namespace type {
 /*
 Returns the minimum distance between the specified types in the type hierarchy
@@ -37,39 +21,35 @@ If "traceAll" is true, then this function will trace all paths in an attempt to
 find the minimal common type between the two types. This means that this
 function will be guaranteed to return a type (Any).
 */
-int getTypeMatchScore(Type** commonTypeDest, Type* a, Type* b, bool traceAll);
-Type* getTypeForTypeRef(TypeRef* tr);
-bool typesMatch(TypeRef* a, TypeRef* b);
-bool typesAreCompatible(TypeRef* a, TypeRef* b);
+int getTypeMatchScore(const TypeRef** commonTypeDest, const TypeRef* a,
+					  const TypeRef* b, bool traceAll);
+bool typesMatch(const TypeRef* a, const TypeRef* b);
+bool typesAreCompatible(const TypeRef* a, const TypeRef* b);
 void getGenerics(List<GenericType*>& dest, Symbol* s);
 bool genericsAreCompatible(const List<TypeRef*>& supplied,
 						   const List<GenericType*>& target);
-bool genericAcceptsType(GenericType* g, TypeRef* t);
-Type* getTypeForGeneric(GenericType* g);
+bool genericAcceptsType(const GenericType* g, const TypeRef* t);
 
 /*
 Returns the minimal common type between the two types.
 All types are guaranteed to have at least one common type (Any).
 */
-Type* getMinCommonType(Type* a, Type* b);
+const TypeRef* getMinCommonType(const TypeRef* a, const TypeRef* b);
 
 /*
 Returns true if "src" can be cast to "target".
 */
-bool canCastTo(Type* src, Type* target);
+bool canCastTo(const TypeRef* src, const TypeRef* target);
 }  // namespace type
 
 struct Scope {
 	Scope* parentScope;
 	List<Symbol*> symbols;
-	List<Type*> types;
 
 	Scope(Scope* parentScope);
 	virtual ~Scope();
 	virtual void addSymbol(Symbol* symbol);
-	virtual void resolveSymbol(List<Symbol*>& dest, const Token* id,
-							   TypeRef* expectedType,
-							   const List<TypeRef*>& generics, int flags);
+	virtual bool containsSymbol(Symbol* symbol);
 };
 
 bool hasCompatibleGenerics(const Type* type, const List<TypeRef*>& generics);
@@ -121,7 +101,11 @@ struct GlobalScope : public Symbol, public Scope {
 	Import* resolveImport(Token* id);
 };
 
+struct Type;
+
 struct TypeRef : public Node {
+	Type* actualType;
+	List<TypeRef*> actualGenerics;
 	TypeRef(const SourceMeta& sourceMeta);
 	virtual ~TypeRef();
 };
@@ -184,6 +168,16 @@ struct FunctionTypeRef : public TypeRef {
 	FunctionTypeRef(const SourceMeta& sourceMeta,
 					const List<TypeRef*>& paramTypes, TypeRef* returnType);
 	virtual ~FunctionTypeRef();
+	virtual void toJson(StringBuffer& dest) const override;
+};
+
+/*
+This is used as an intermediate type ref until the proper type can be obtained
+*/
+struct SuperTypeRef : public TypeRef {
+	Type* child;
+	SuperTypeRef(const SourceMeta& sourceMeta, Type* child);
+	virtual ~SuperTypeRef();
 	virtual void toJson(StringBuffer& dest) const override;
 };
 
@@ -292,11 +286,22 @@ struct LiteralExpression : public Expression {
 	virtual void toJson(StringBuffer& dest) const override;
 };
 
+namespace resolve {
+enum class ResultOrigin { LOCAL, STATIC, TYPE_HIERARCHY };
+
+struct SearchResult {
+	Symbol* symbol;
+	Scope* owningScope;
+	ResultOrigin origin;
+};
+}  // namespace resolve
+
 struct IdentifierExpression : public Expression {
 	Token* value;
 	List<TypeRef*> generics;
 	bool globalPrefix;
-	List<Symbol*> possibleReferents;
+	Symbol* referent;
+	List<resolve::SearchResult> possibleReferents;
 	IdentifierExpression(Token* value, const List<TypeRef*>& generics,
 						 bool globalPrefix);
 	virtual ~IdentifierExpression();
@@ -321,6 +326,7 @@ struct LambdaExpression : public Expression, public Scope {
 struct Parameter : public Symbol {
 	List<Modifier*> modifiers;
 	TypeRef* declaredType;
+	TypeRef* actualType;
 	Parameter(const List<Modifier*>& modifiers, Token* id,
 			  TypeRef* declaredType);
 	virtual ~Parameter();
@@ -335,6 +341,7 @@ struct FunctionBlock : public Node, public Scope {
 				  Scope* parentScope);
 	virtual ~FunctionBlock();
 	virtual void toJson(StringBuffer& dest) const override;
+	virtual void addSymbol(Symbol* symbol) override;
 };
 
 struct GenericType;
@@ -346,10 +353,11 @@ struct Function : public Symbol, public Scope {
 	TypeRef* declaredReturnType;
 	List<Node*> content;
 	TypeRef* actualReturnType;
+	bool hasBody;
 	Function(const List<Modifier*>& modifiers, Token* id,
 			 const List<GenericType*>& generics,
 			 const List<Parameter*>& parameters, TypeRef* declaredReturnType,
-			 const List<Node*>& content, Scope* parentScope);
+			 const List<Node*>& content, Scope* parentScope, bool hasBody);
 	virtual ~Function();
 	virtual void toJson(StringBuffer& dest) const override;
 };
@@ -479,6 +487,7 @@ struct Type : public Symbol {
 
 struct GenericType : public Type {
 	TypeRef* declaredParentType;
+	TypeRef* actualParentType;
 
 	// A generic type cannot itself declare generics,
 	// therefore it does not accept the list of generic types
@@ -487,11 +496,13 @@ struct GenericType : public Type {
 	virtual void toJson(StringBuffer& dest) const override;
 };
 
-struct Alias : public Type {
+// An alias is a scope because it stores its own generics
+struct Alias : public Type, public Scope {
 	List<Modifier*> modifiers;
 	TypeRef* value;
 	Alias(const List<Modifier*>& modifiers, Token* id,
-		  const List<GenericType*>& generics, TypeRef* value);
+		  const List<GenericType*>& generics, TypeRef* value,
+		  Scope* parentScope);
 	virtual ~Alias();
 	virtual void toJson(StringBuffer& dest) const override;
 };
@@ -601,8 +612,9 @@ struct Destructor : public Node, public Scope {
 struct EnumCase : public Symbol {
 	List<Modifier*> modifiers;
 	List<Expression*> args;
+	Enum* enumType;
 	EnumCase(const List<Modifier*>& modifiers, Token* id,
-			 const List<Expression*>& args);
+			 const List<Expression*>& args, Enum* enumType);
 	virtual ~EnumCase();
 	virtual void toJson(StringBuffer& dest) const override;
 };
@@ -634,7 +646,19 @@ struct Import : public Symbol {
 	virtual void toJson(StringBuffer& dest) const override;
 };
 
-enum class ResolutionStage { INITIAL_PASS, RESOLVED_TYPES, RESOLVED_ALL };
+enum class ResolutionStage {
+	UNRESOLVED,
+	INTERNAL_TYPES,
+	INTERNAL_NON_RECURSIVE,
+	INTERNAL_ALL,
+	EXTERNAL_TYPES,
+	EXTERNAL_NON_RECURSIVE,
+	RESOLVED,
+	__END_OF_ENUM
+};
+
+ResolutionStage& operator++(ResolutionStage& rs);
+ResolutionStage operator++(ResolutionStage& rs, int);
 
 struct Ast {
 	ResolutionStage stage;
@@ -644,4 +668,7 @@ struct Ast {
 };
 
 bool isFunctionScope(const Scope* scope);
+bool isStaticSymbol(const Scope* owningScope, const Symbol* symbol);
+TokenType getSymbolVisibility(const Scope* owningScope, const Symbol* symbol,
+							  bool modifiable, SourceMeta& destMeta);
 }  // namespace acl

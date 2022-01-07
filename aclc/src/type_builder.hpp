@@ -14,6 +14,7 @@ TypeRef* pointer(TypeRef* content);
 TypeRef* array(TypeRef* content);
 TypeRef* map(TypeRef* key, TypeRef* value);
 TypeRef* tuple(std::initializer_list<TypeRef*> types);
+TypeRef* tuple(const List<TypeRef*>& types);
 FunctionTypeRef* function(std::initializer_list<TypeRef*> paramTypes,
 						  TypeRef* returnType);
 FunctionTypeRef* function(const List<TypeRef*>& paramTypes,

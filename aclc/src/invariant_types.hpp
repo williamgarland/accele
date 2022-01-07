@@ -39,9 +39,15 @@ extern const InvariantType* FLOAT80;
 extern const InvariantType* BOOL;
 extern const InvariantType* STRING;
 extern const InvariantType* VOID;
+extern const InvariantType* ARRAY;
+extern const InvariantType* MAP;
+extern const InvariantType* TUPLE;
+extern const InvariantType* FUNCTION;
+extern const InvariantType* OPTIONAL;
+extern const InvariantType* UNWRAPPED_OPTIONAL;
+extern const InvariantType* POINTER;
 
 bool isInvariantType(const String& id);
-const InvariantType* resolveInvariantType(const Token* id,
-										  const List<TypeRef*>& generics);
+const InvariantType* resolveInvariantType(const Token* id);
 }  // namespace bt
 }  // namespace acl

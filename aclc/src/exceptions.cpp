@@ -57,6 +57,8 @@ TokenMismatchException::TokenMismatchException(TokenType expected,
 
 TokenMismatchException::~TokenMismatchException() {}
 
-void warn(const String& message) { std::cout << "[WARN]: " << message << "\n"; }
+void warn(const String& message) {
+	std::cout << "\u001b[33m[WARN]\u001b[0m: " << message << "\n";
+}
 
 }  // namespace acl

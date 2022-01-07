@@ -9,65 +9,68 @@
 #include "type_builder.hpp"
 
 namespace acl {
+ResolutionStage& operator++(ResolutionStage& rs) {
+	using IntType = typename std::underlying_type<ResolutionStage>::type;
+	rs = static_cast<ResolutionStage>(static_cast<IntType>(rs) + 1);
+	if (rs == ResolutionStage::__END_OF_ENUM)
+		rs = static_cast<ResolutionStage>(0);
+	return rs;
+}
+
+ResolutionStage operator++(ResolutionStage& rs, int) {
+	ResolutionStage result = rs;
+	++rs;
+	return result;
+}
+
 Scope::Scope(Scope* parentScope) : parentScope(parentScope) {}
 
 Scope::~Scope() {}
 
 void Scope::addSymbol(Symbol* symbol) {
-	bool isType = dynamic_cast<Type*>(symbol);
-
-	for (const auto& s : symbols) {
-		if (((isType && dynamic_cast<Type*>(s)) || !dynamic_cast<Type*>(s)) &&
-			s->id->data == symbol->id->data)
-			throw AclException(ASP_CORE_UNKNOWN, symbol->id->meta,
-							   "Duplicate symbol");
-	}
+	// We only check types and namespaces here; we can't check functions or the
+	// like because addSymbol() doesn't consider overloaded functions
+	if ((dynamic_cast<Type*>(symbol) || dynamic_cast<Namespace*>(symbol)) &&
+		containsSymbol(symbol))
+		throw AclException(ASP_CORE_UNKNOWN, symbol->id->meta,
+						   "Duplicate symbol");
 
 	symbols.push_back(symbol);
-
-	if (isType) types.push_back(dynamic_cast<Type*>(symbol));
 }
 
-namespace ResolveFlag {
-bool isLexicalOnly(int flags) {
-	return ((flags & LEXICAL) == LEXICAL) && ((flags & TYPE_HIERARCHY) == 0);
-}
-bool isTypeHierarchyOnly(int flags) {
-	return ((flags & LEXICAL) == 0) &&
-		   ((flags & TYPE_HIERARCHY) == TYPE_HIERARCHY);
-}
-bool hasRequireExactMatch(int flags) {
-	return (flags & REQUIRE_EXACT_MATCH) == REQUIRE_EXACT_MATCH;
-}
-bool hasRecursive(int flags) { return (flags & RECURSIVE) == RECURSIVE; }
+bool Scope::containsSymbol(Symbol* symbol) {
+	bool isTypeEquiv =
+		dynamic_cast<Type*>(symbol) || dynamic_cast<Namespace*>(symbol);
 
-bool flagsAcceptSymbolType(int flags, Symbol* s) {
-	return (((flags & TARGET_TYPE) == TARGET_TYPE) && dynamic_cast<Type*>(s)) ||
-		   (((flags & TARGET_NAMESPACE) == TARGET_NAMESPACE) &&
-			(dynamic_cast<Namespace*>(s) || dynamic_cast<Import*>(s))) ||
-		   (((flags & TARGET_VARIABLE) == TARGET_VARIABLE) &&
-			(dynamic_cast<Variable*>(s) || dynamic_cast<Function*>(s)));
+	for (const auto& s : symbols) {
+		if (s->id->data == symbol->id->data &&
+			((isTypeEquiv &&
+			  (dynamic_cast<Type*>(s) || dynamic_cast<Namespace*>(s))) ||
+			 (!isTypeEquiv && !dynamic_cast<Type*>(s) &&
+			  !dynamic_cast<Namespace*>(s))))
+			return true;
+	}
+
+	return false;
 }
-}  // namespace ResolveFlag
 
 namespace type {
-static int getTypeMatchScore0(Type** commonTypeDest, Type* a, Type* b,
-							  bool traceAll, bool traceB) {
-	if (a == b) {
+static int getTypeMatchScore0(const TypeRef** commonTypeDest, const TypeRef* a,
+							  const TypeRef* b, bool traceAll, bool traceB) {
+	if (a->actualType == b->actualType) {
 		// This could be set to a or b; it doesn't matter
 		if (commonTypeDest) *commonTypeDest = a;
 		return 0;
 	}
 
-	Type* commonTypeA = nullptr;
-	Type* commonTypeB = nullptr;
+	const TypeRef* commonTypeA = nullptr;
+	const TypeRef* commonTypeB = nullptr;
 	int minA = -1;
 	int minB = -1;
 
-	for (auto& p : a->parentTypes) {
-		Type* commonType = nullptr;
-		int s = getTypeMatchScore0(&commonType, getTypeForTypeRef(p), b,
-								   traceAll, false);
+	for (auto& p : a->actualType->parentTypes) {
+		const TypeRef* commonType = nullptr;
+		int s = getTypeMatchScore0(&commonType, p, b, traceAll, false);
 		if (minA == -1 || s < minA) {
 			commonTypeA = commonType;
 			minA = s;
@@ -75,10 +78,9 @@ static int getTypeMatchScore0(Type** commonTypeDest, Type* a, Type* b,
 	}
 
 	if (traceAll || traceB) {
-		for (auto& p : b->parentTypes) {
-			Type* commonType = nullptr;
-			int s = getTypeMatchScore0(&commonType, getTypeForTypeRef(p), a,
-									   traceAll, false);
+		for (auto& p : b->actualType->parentTypes) {
+			const TypeRef* commonType = nullptr;
+			int s = getTypeMatchScore0(&commonType, p, a, traceAll, false);
 			if (minB == -1 || s < minB) {
 				commonTypeB = commonType;
 				minB = s;
@@ -111,24 +113,21 @@ static int getTypeMatchScore0(Type** commonTypeDest, Type* a, Type* b,
 	return -1;
 }
 
-int getTypeMatchScore(Type** commonTypeDest, Type* a, Type* b, bool traceAll) {
+int getTypeMatchScore(const TypeRef** commonTypeDest, const TypeRef* a,
+					  const TypeRef* b, bool traceAll) {
+	if (GenericType* g = dynamic_cast<GenericType*>(a->actualType))
+		a = g->actualParentType;
+	if (GenericType* g = dynamic_cast<GenericType*>(b->actualType))
+		b = g->actualParentType;
 	return getTypeMatchScore0(commonTypeDest, a, b, traceAll, true);
 }
 
-Type* getTypeForTypeRef(TypeRef* tr) {
-	if (SimpleTypeRef* s = dynamic_cast<SimpleTypeRef*>(tr))
-		return dynamic_cast<Type*>(s->referent);
-	return nullptr;	 // TODO: Implement the rest
-}
-
 bool typesMatch(TypeRef* a, TypeRef* b) {
-	return getTypeMatchScore(nullptr, getTypeForTypeRef(a),
-							 getTypeForTypeRef(b), false) == 0;
+	return getTypeMatchScore(nullptr, a, b, false) == 0;
 }
 
 bool typesAreCompatible(TypeRef* a, TypeRef* b) {
-	return getTypeMatchScore(nullptr, getTypeForTypeRef(a),
-							 getTypeForTypeRef(b), false) >= 0;
+	return getTypeMatchScore(nullptr, a, b, false) >= 0;
 }
 
 void getGenerics(List<GenericType*>& dest, Symbol* s) {
@@ -149,19 +148,17 @@ bool genericsAreCompatible(const List<TypeRef*>& supplied,
 	return true;
 }
 
-bool genericAcceptsType(GenericType* g, TypeRef* t) {
-	auto gt = getTypeForGeneric(g);
-	auto tt = getTypeForTypeRef(t);
-	return getTypeMatchScore(nullptr, gt, tt, false) >= 0;
+static bool canCast(const TypeRef* src, const TypeRef* target,
+					bool checkForBuiltins);
+
+bool genericAcceptsType(const GenericType* g, const TypeRef* t) {
+	// Do not handle builtins here; we are strictly looking through the type
+	// hierarchy only
+	return canCast(t, g->actualParentType, false);
 }
 
-Type* getTypeForGeneric(GenericType* g) {
-	if (g->declaredParentType) return getTypeForTypeRef(g->declaredParentType);
-	return const_cast<bt::InvariantType*>(bt::ANY);
-}
-
-Type* getMinCommonType(Type* a, Type* b) {
-	Type* result = nullptr;
+const TypeRef* getMinCommonType(const TypeRef* a, const TypeRef* b) {
+	const TypeRef* result = nullptr;
 	int score = getTypeMatchScore(&result, a, b, true);
 	if (score == -1)
 		// This error should never occur; all types have at least a min common
@@ -171,152 +168,84 @@ Type* getMinCommonType(Type* a, Type* b) {
 	return result;
 }
 
-bool canCastTo(Type* src, Type* target) {
-	Type* dest = nullptr;
+static bool canCastBuiltin(const TypeRef* src, const TypeRef* target);
+
+static bool canCast(const TypeRef* src, const TypeRef* target,
+					bool checkForBuiltins) {
+	if (GenericType* g = dynamic_cast<GenericType*>(src->actualType))
+		src = g->actualParentType;
+	if (GenericType* g = dynamic_cast<GenericType*>(target->actualType))
+		target = g->actualParentType;
+	const TypeRef* dest = nullptr;
 	int score = getTypeMatchScore(&dest, src, target, false);
-	return score >= 0 && dest == target;
-}
-}  // namespace type
 
-static bool isObjectOrientedScope(Scope* scope) {
-	return dynamic_cast<Class*>(scope) || dynamic_cast<Struct*>(scope) ||
-		   dynamic_cast<Template*>(scope) || dynamic_cast<Enum*>(scope);
-}
-
-static bool hasStaticModifier(const List<Modifier*>& modifiers) {
-	for (const auto& m : modifiers) {
-		if (m->content->type == TokenType::STATIC) return true;
-	}
+	if (score >= 0 && dest->actualType == target->actualType) return true;
+	if (checkForBuiltins &&
+		(dynamic_cast<bt::InvariantType*>(src->actualType) ||
+		 dynamic_cast<bt::InvariantType*>(target->actualType)))
+		return canCastBuiltin(src, target);
 	return false;
 }
 
-static bool isSymbolStatic(Symbol* s, bool checkModifierOnly = true) {
-	if (Variable* v = dynamic_cast<Variable*>(s))
-		return hasStaticModifier(v->modifiers);
-	if (Function* f = dynamic_cast<Function*>(s))
-		return hasStaticModifier(f->modifiers);
-	return !checkModifierOnly &&
-		   (dynamic_cast<Type*>(s) || dynamic_cast<Namespace*>(s) ||
-			dynamic_cast<Import*>(s));
+static bool canCastBuiltin(const TypeRef* src, const TypeRef* target) {
+	auto voidRef = tb::base(const_cast<bt::InvariantType*>(bt::VOID), {},
+							bt::VOID->sourceMeta);
+	auto strRef = tb::base(const_cast<bt::InvariantType*>(bt::STRING), {},
+						   bt::STRING->sourceMeta);
+
+	bool result = false;
+
+	auto a = src->actualType;
+	auto b = target->actualType;
+
+	if (canCast(src, voidRef, false) || canCast(target, voidRef, false))
+		result = false;
+	else if (canCast(target, strRef, false))
+		result = true;
+	else
+		result = (((a == bt::INT || a == bt::INT8 || b == bt::INT16 ||
+					b == bt::INT32 || b == bt::INT64 || a == bt::UINT ||
+					a == bt::UINT8 || a == bt::UINT16 || a == bt::UINT32 ||
+					a == bt::UINT64) &&
+				   (b == bt::FLOAT || b == bt::DOUBLE || b == bt::FLOAT80)) ||
+				  (a == bt::FLOAT && (b == bt::DOUBLE || b == bt::FLOAT80)) ||
+				  (a == bt::DOUBLE && b == bt::FLOAT80) ||
+				  (a == bt::INT8 && (b == bt::INT16 || b == bt::INT32 ||
+									 b == bt::INT64 || b == bt::INT)) ||
+				  (a == bt::INT16 &&
+				   (b == bt::INT32 || b == bt::INT64 || b == bt::INT)) ||
+				  (a == bt::INT32 && (b == bt::INT64 || b == bt::INT)) ||
+				  (a == bt::INT64 && b == bt::INT) ||
+				  (a == bt::UINT8 &&
+				   (b == bt::UINT16 || b == bt::UINT32 || b == bt::UINT64 ||
+					b == bt::UINT || b == bt::INT16 || b == bt::INT32 ||
+					b == bt::INT64 || b == bt::INT)) ||
+				  (a == bt::UINT16 &&
+				   (b == bt::UINT32 || b == bt::UINT64 || b == bt::UINT ||
+					b == bt::INT32 || b == bt::INT64 || b == bt::INT)) ||
+				  (a == bt::UINT32 && (b == bt::UINT64 || b == bt::UINT ||
+									   b == bt::INT64 || b == bt::INT)) ||
+				  (a == bt::UINT64 && b == bt::UINT) ||
+				  ((a == bt::OPTIONAL || a == bt::UNWRAPPED_OPTIONAL) &&
+				   b == bt::BOOL));
+
+	delete voidRef;
+	delete strRef;
+
+	return result;
 }
 
-static TypeRef* getTypeForSymbol(Symbol* s) {
-	if (Function* f = dynamic_cast<Function*>(s)) {
-		List<TypeRef*> paramTypes;
-		for (auto& p : f->parameters) {
-			if (p->declaredType)
-				paramTypes.push_back(p->declaredType);
-			else
-				paramTypes.push_back(
-					tb::base(const_cast<bt::InvariantType*>(bt::ANY), {},
-							 p->sourceMeta));
-		}
-		return tb::function(paramTypes, f->actualReturnType);
-	}
-
-	return dynamic_cast<Variable*>(s)->actualType;
+bool canCastTo(const TypeRef* src, const TypeRef* target) {
+	return canCast(src, target, true);
 }
-
-void Scope::resolveSymbol(List<Symbol*>& dest, const Token* id,
-						  TypeRef* expectedType, const List<TypeRef*>& generics,
-						  int flags) {
-	for (auto& s : symbols) {
-		if ((isObjectOrientedScope(this) && !isSymbolStatic(s) &&
-			 ResolveFlag::isLexicalOnly(flags)) ||
-			(isSymbolStatic(s, false) &&
-			 ResolveFlag::isTypeHierarchyOnly(flags)))
-			continue;
-
-		List<GenericType*> genericTypes;
-		type::getGenerics(genericTypes, s);
-
-		if (ResolveFlag::flagsAcceptSymbolType(flags, s) &&
-			s->id->data == id->data &&
-			type::genericsAreCompatible(generics, genericTypes) &&
-			(!expectedType ||
-			 (ResolveFlag::hasRequireExactMatch(flags) &&
-			  type::typesMatch(getTypeForSymbol(s), expectedType)) ||
-			 (!ResolveFlag::hasRequireExactMatch(flags) &&
-			  type::typesAreCompatible(getTypeForSymbol(s), expectedType)))) {
-			dest.push_back(s);
-		}
-	}
-
-	if (ResolveFlag::hasRecursive(flags)) {
-		if (!ResolveFlag::isTypeHierarchyOnly(flags)) {
-			if (parentScope) {
-				try {
-					List<Symbol*> foundParentSymbols;
-					int parentFlags = flags;
-					parentFlags |= ResolveFlag::LEXICAL;
-					parentFlags &= ~ResolveFlag::TYPE_HIERARCHY;
-					parentScope->resolveSymbol(foundParentSymbols, id,
-											   expectedType, generics,
-											   parentFlags);
-
-					for (auto& s : foundParentSymbols) dest.push_back(s);
-				} catch (AclException& e) {
-				}
-			} else if (GlobalScope* gs = dynamic_cast<GlobalScope*>(this)) {
-				for (auto& imp : gs->imports) {
-					try {
-						List<Symbol*> foundImportSymbols;
-						int importFlags = flags;
-						importFlags &= ~ResolveFlag::RECURSIVE;
-						importFlags |= ResolveFlag::LEXICAL;
-						importFlags &= ~ResolveFlag::TYPE_HIERARCHY;
-						imp->referent->resolveSymbol(foundImportSymbols, id,
-													 expectedType, generics,
-													 importFlags);
-
-						for (auto& s : foundImportSymbols) dest.push_back(s);
-					} catch (AclException& e) {
-					}
-				}
-			}
-		}
-	}
-
-	if (!ResolveFlag::isLexicalOnly(flags)) {
-		if (Type* t = dynamic_cast<Type*>(this)) {
-			for (auto& parent : t->parentTypes) {
-				try {
-					auto type = type::getTypeForTypeRef(parent);
-					if (Scope* asScope = dynamic_cast<Scope*>(type)) {
-						List<Symbol*> foundParentSymbols;
-						int parentFlags = flags;
-						parentFlags |= ResolveFlag::LEXICAL;
-						parentFlags &= ~ResolveFlag::TYPE_HIERARCHY;
-						asScope->resolveSymbol(foundParentSymbols, id,
-											   expectedType, generics,
-											   parentFlags);
-
-						for (auto& s : foundParentSymbols) dest.push_back(s);
-					}
-				} catch (AclException& e) {
-				}
-			}
-		}
-	}
-
-	if (ResolveFlag::hasRequireExactMatch(flags) && dest.size() > 1)
-		throw AclException(ASP_CORE_UNKNOWN, id->meta,
-						   "Multiple symbols match the specified criteria");
-	if (dest.size() < 1)
-		throw AclException(ASP_CORE_UNKNOWN, id->meta, "Unresolved symbol");
-}
-
-bool hasCompatibleGenerics(const Type* type, const List<TypeRef*>& generics) {
-	// TODO: Implement this
-	return true;
-}
+}  // namespace type
 
 Node::Node(const SourceMeta& sourceMeta) : sourceMeta(sourceMeta) {}
 
 Node::~Node() {}
 
 Ast::Ast(GlobalScope* globalScope)
-	: globalScope(globalScope), stage(ResolutionStage::INITIAL_PASS) {}
+	: globalScope(globalScope), stage(ResolutionStage::UNRESOLVED) {}
 
 Ast::~Ast() { delete globalScope; }
 
@@ -355,7 +284,8 @@ Import* GlobalScope::resolveImport(Token* id) {
 	throw AclException(ASP_CORE_UNKNOWN, id->meta, "Unresolved import");
 }
 
-TypeRef::TypeRef(const SourceMeta& sourceMeta) : Node(sourceMeta) {}
+TypeRef::TypeRef(const SourceMeta& sourceMeta)
+	: Node(sourceMeta), actualType(nullptr) {}
 
 TypeRef::~TypeRef() {}
 
@@ -469,7 +399,15 @@ void FunctionTypeRef::toJson(StringBuffer& dest) const {
 	dest << "\n}";
 }
 
-Expression::Expression(const SourceMeta& sourceMeta) : Node(sourceMeta) {}
+SuperTypeRef::SuperTypeRef(const SourceMeta& sourceMeta, Type* child)
+	: TypeRef(sourceMeta), child(child) {}
+
+SuperTypeRef::~SuperTypeRef() {}
+
+void SuperTypeRef::toJson(StringBuffer& dest) const {}
+
+Expression::Expression(const SourceMeta& sourceMeta)
+	: Node(sourceMeta), valueType(nullptr) {}
 
 Expression::~Expression() {}
 
@@ -734,11 +672,15 @@ Symbol::~Symbol() { delete id; }
 
 Parameter::Parameter(const List<Modifier*>& modifiers, Token* id,
 					 TypeRef* declaredType)
-	: Symbol(id), modifiers(modifiers), declaredType(declaredType) {}
+	: Symbol(id),
+	  modifiers(modifiers),
+	  declaredType(declaredType),
+	  actualType(nullptr) {}
 
 Parameter::~Parameter() {
 	for (auto& c : modifiers) delete c;
 	delete declaredType;
+	if (actualType != declaredType) delete actualType;
 }
 
 void Parameter::toJson(StringBuffer& dest) const {
@@ -779,11 +721,33 @@ void FunctionBlock::toJson(StringBuffer& dest) const {
 	dest << "\n}";
 }
 
+void FunctionBlock::addSymbol(Symbol* symbol) {
+	Scope* currentScope = this;
+	do {
+		if (currentScope->containsSymbol(symbol))
+			throw AclException(ASP_CORE_UNKNOWN, symbol->id->meta,
+							   "Duplicate symbol");
+		currentScope = currentScope->parentScope;
+	} while (currentScope && dynamic_cast<FunctionBlock*>(currentScope));
+
+	// Do one more for the top containing scope that isn't a function block
+	// (i.e. a function, a lambda expression, etc.)
+	if ((dynamic_cast<Function*>(currentScope) ||
+		 dynamic_cast<LambdaExpression*>(currentScope) ||
+		 dynamic_cast<Constructor*>(currentScope) ||
+		 dynamic_cast<SetBlock*>(currentScope)) &&
+		currentScope->containsSymbol(symbol))
+		throw AclException(ASP_CORE_UNKNOWN, symbol->id->meta,
+						   "Duplicate symbol");
+
+	symbols.push_back(symbol);
+}
+
 Function::Function(const List<Modifier*>& modifiers, Token* id,
 				   const List<GenericType*>& generics,
 				   const List<Parameter*>& parameters,
 				   TypeRef* declaredReturnType, const List<Node*>& content,
-				   Scope* parentScope)
+				   Scope* parentScope, bool hasBody)
 	: Symbol(id),
 	  Scope(parentScope),
 	  modifiers(modifiers),
@@ -791,7 +755,11 @@ Function::Function(const List<Modifier*>& modifiers, Token* id,
 	  parameters(parameters),
 	  declaredReturnType(declaredReturnType),
 	  actualReturnType(nullptr),
-	  content(content) {}
+	  hasBody(hasBody),
+	  content(content) {
+	for (auto& g : generics) addSymbol(g);
+	for (auto& p : parameters) addSymbol(p);
+}
 
 Function::~Function() {
 	for (auto& c : modifiers) delete c;
@@ -1090,7 +1058,9 @@ Type::~Type() {
 }
 
 GenericType::GenericType(Token* id, TypeRef* declaredParentType)
-	: Type(id, {}), declaredParentType(declaredParentType) {}
+	: Type(id, {}),
+	  declaredParentType(declaredParentType),
+	  actualParentType(nullptr) {}
 
 GenericType::~GenericType() { delete declaredParentType; }
 
@@ -1106,8 +1076,14 @@ void GenericType::toJson(StringBuffer& dest) const {
 }
 
 Alias::Alias(const List<Modifier*>& modifiers, Token* id,
-			 const List<GenericType*>& generics, TypeRef* value)
-	: Type(id, generics), modifiers(modifiers), value(value) {}
+			 const List<GenericType*>& generics, TypeRef* value,
+			 Scope* parentScope)
+	: Type(id, generics),
+	  Scope(parentScope),
+	  modifiers(modifiers),
+	  value(value) {
+	for (auto& g : generics) addSymbol(g);
+}
 
 Alias::~Alias() {
 	for (auto& c : modifiers) delete c;
@@ -1202,7 +1178,14 @@ Class::Class(const List<Modifier*>& modifiers, Token* id,
 	  modifiers(modifiers),
 	  declaredParentType(declaredParentType),
 	  usedTemplates(usedTemplates),
-	  content(content) {}
+	  content(content) {
+	for (auto& g : generics) addSymbol(g);
+	if (declaredParentType) parentTypes.push_back(declaredParentType);
+	for (auto& p : usedTemplates) parentTypes.push_back(p);
+	if (parentTypes.empty())
+		parentTypes.push_back(
+			tb::base(const_cast<bt::InvariantType*>(bt::ANY), {}, sourceMeta));
+}
 
 Class::~Class() {
 	for (auto& c : modifiers) delete c;
@@ -1243,7 +1226,14 @@ Struct::Struct(const List<Modifier*>& modifiers, Token* id,
 	  modifiers(modifiers),
 	  declaredParentType(declaredParentType),
 	  usedTemplates(usedTemplates),
-	  content(content) {}
+	  content(content) {
+	for (auto& g : generics) addSymbol(g);
+	if (declaredParentType) parentTypes.push_back(declaredParentType);
+	for (auto& p : usedTemplates) parentTypes.push_back(p);
+	if (parentTypes.empty())
+		parentTypes.push_back(
+			tb::base(const_cast<bt::InvariantType*>(bt::ANY), {}, sourceMeta));
+}
 
 Struct::~Struct() {
 	for (auto& c : modifiers) delete c;
@@ -1283,7 +1273,13 @@ Template::Template(const List<Modifier*>& modifiers, Token* id,
 	  Scope(parentScope),
 	  modifiers(modifiers),
 	  declaredParentTypes(declaredParentTypes),
-	  content(content) {}
+	  content(content) {
+	for (auto& g : generics) addSymbol(g);
+	for (auto& p : declaredParentTypes) parentTypes.push_back(p);
+	if (parentTypes.empty())
+		parentTypes.push_back(
+			tb::base(const_cast<bt::InvariantType*>(bt::ANY), {}, sourceMeta));
+}
 
 Template::~Template() {
 	for (auto& c : modifiers) delete c;
@@ -1317,7 +1313,13 @@ Enum::Enum(const List<Modifier*>& modifiers, Token* id,
 	  Scope(parentScope),
 	  modifiers(modifiers),
 	  usedTemplates(usedTemplates),
-	  content(content) {}
+	  content(content) {
+	for (auto& g : generics) addSymbol(g);
+	for (auto& p : usedTemplates) parentTypes.push_back(p);
+	if (parentTypes.empty())
+		parentTypes.push_back(
+			tb::base(const_cast<bt::InvariantType*>(bt::ANY), {}, sourceMeta));
+}
 
 Enum::~Enum() {
 	for (auto& c : modifiers) delete c;
@@ -1350,7 +1352,9 @@ Namespace::Namespace(const List<Modifier*>& modifiers, Token* id,
 	  Scope(parentScope),
 	  modifiers(modifiers),
 	  generics(generics),
-	  content(content) {}
+	  content(content) {
+	for (auto& g : generics) addSymbol(g);
+}
 
 Namespace::~Namespace() {
 	for (auto& c : modifiers) delete c;
@@ -1427,8 +1431,8 @@ void Destructor::toJson(StringBuffer& dest) const {
 }
 
 EnumCase::EnumCase(const List<Modifier*>& modifiers, Token* id,
-				   const List<Expression*>& args)
-	: Symbol(id), modifiers(modifiers), args(args) {}
+				   const List<Expression*>& args, Enum* enumType)
+	: Symbol(id), modifiers(modifiers), args(args), enumType(enumType) {}
 
 EnumCase::~EnumCase() {
 	for (auto& c : modifiers) delete c;
@@ -1587,4 +1591,139 @@ bool isFunctionScope(const Scope* scope) {
 		   dynamic_cast<const Destructor*>(scope);
 }
 
+bool isStaticSymbol(const Scope* owningScope, const Symbol* symbol) {
+	if (dynamic_cast<const Namespace*>(owningScope) ||
+		dynamic_cast<const GlobalScope*>(owningScope))
+		return true;
+	if (const Variable* v = dynamic_cast<const Variable*>(symbol)) {
+		for (const auto& m : v->modifiers)
+			if (m->content->type == TokenType::STATIC) return true;
+		return false;
+	}
+	if (const Function* v = dynamic_cast<const Function*>(symbol)) {
+		for (const auto& m : v->modifiers)
+			if (m->content->type == TokenType::STATIC) return true;
+		return false;
+	}
+	return dynamic_cast<const Type*>(symbol) ||
+		   dynamic_cast<const Namespace*>(symbol) ||
+		   dynamic_cast<const GlobalScope*>(symbol) ||
+		   dynamic_cast<const Constructor*>(symbol);
+}
+
+static bool isVisibilityModifier(TokenType type) {
+	return type == TokenType::PUBLIC || type == TokenType::PRIVATE ||
+		   type == TokenType::PROTECTED || type == TokenType::INTERNAL;
+}
+
+static const Token* getVisibilityModifier(const List<Modifier*>& modifiers) {
+	for (const auto& m : modifiers) {
+		if (isVisibilityModifier(m->content->type)) return m->content;
+	}
+	return nullptr;
+}
+
+TokenType getSymbolVisibility(const Scope* owningScope, const Symbol* symbol,
+							  bool modifiable, SourceMeta& destMeta) {
+	if (const Variable* n = dynamic_cast<const Variable*>(symbol)) {
+		auto vis = getVisibilityModifier(n->modifiers);
+		if (vis) {
+			destMeta = vis->meta;
+			return vis->type;
+		}
+
+		if (n->value) {
+			if (const VariableBlock* vb =
+					dynamic_cast<const VariableBlock*>(n->value)) {
+				if (modifiable && vb->setBlock) {
+					vis = getVisibilityModifier(vb->setBlock->modifiers);
+					if (vis) {
+						destMeta = vis->meta;
+						return vis->type;
+					}
+				} else if (vb->getBlock) {
+					vis = getVisibilityModifier(vb->getBlock->modifiers);
+					if (vis) {
+						destMeta = vis->meta;
+						return vis->type;
+					}
+				}
+			}
+		}
+
+		destMeta = symbol->sourceMeta;
+
+		if (dynamic_cast<const Class*>(owningScope) ||
+			dynamic_cast<const Enum*>(owningScope)) {
+			if (n->constant)
+				return modifiable ? TokenType::PRIVATE : TokenType::PUBLIC;
+			return TokenType::PRIVATE;
+		}
+
+		return TokenType::PUBLIC;
+	} else if (const Function* n = dynamic_cast<const Function*>(symbol)) {
+		auto vis = getVisibilityModifier(n->modifiers);
+		if (vis) {
+			destMeta = vis->meta;
+			return vis->type;
+		}
+	} else if (const Class* n = dynamic_cast<const Class*>(symbol)) {
+		auto vis = getVisibilityModifier(n->modifiers);
+		if (vis) {
+			destMeta = vis->meta;
+			return vis->type;
+		}
+	} else if (const Struct* n = dynamic_cast<const Struct*>(symbol)) {
+		auto vis = getVisibilityModifier(n->modifiers);
+		if (vis) {
+			destMeta = vis->meta;
+			return vis->type;
+		}
+	} else if (const Template* n = dynamic_cast<const Template*>(symbol)) {
+		auto vis = getVisibilityModifier(n->modifiers);
+		if (vis) {
+			destMeta = vis->meta;
+			return vis->type;
+		}
+	} else if (const Enum* n = dynamic_cast<const Enum*>(symbol)) {
+		auto vis = getVisibilityModifier(n->modifiers);
+		if (vis) {
+			destMeta = vis->meta;
+			return vis->type;
+		}
+	} else if (const Namespace* n = dynamic_cast<const Namespace*>(symbol)) {
+		auto vis = getVisibilityModifier(n->modifiers);
+		if (vis) {
+			destMeta = vis->meta;
+			return vis->type;
+		}
+	} else if (const Alias* n = dynamic_cast<const Alias*>(symbol)) {
+		auto vis = getVisibilityModifier(n->modifiers);
+		if (vis) {
+			destMeta = vis->meta;
+			return vis->type;
+		}
+	} else if (const Constructor* n =
+				   dynamic_cast<const Constructor*>(symbol)) {
+		auto vis = getVisibilityModifier(n->modifiers);
+		if (const Enum* parentEnum =
+				dynamic_cast<const Enum*>(n->parentScope)) {
+			if (vis && vis->type != TokenType::PRIVATE)
+				throw AclException(ASP_CORE_UNKNOWN, vis->meta,
+								   "All enum constructors must be private");
+			if (vis)
+				destMeta = vis->meta;
+			else
+				destMeta = symbol->sourceMeta;
+			return TokenType::PRIVATE;
+		}
+		if (vis) {
+			destMeta = vis->meta;
+			return vis->type;
+		}
+	}
+
+	destMeta = symbol->sourceMeta;
+	return TokenType::PUBLIC;
+}
 }  // namespace acl

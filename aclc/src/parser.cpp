@@ -478,7 +478,8 @@ void Parser::popScope() {
 	if (isFunctionScope(currentScope)) {
 		List<Symbol*> newSymbols;
 		for (auto& symbol : currentScope->symbols) {
-			if (dynamic_cast<Parameter*>(symbol)) {
+			if (dynamic_cast<Parameter*>(symbol) ||
+				dynamic_cast<GenericType*>(symbol)) {
 				newSymbols.push_back(symbol);
 			}
 		}
@@ -562,9 +563,11 @@ Node* Parser::parseGlobalContent() {
 	else if (t->type == TokenType::NAMESPACE)
 		return parseNamespace(GLOBAL_NAMESPACE_MODIFIERS,
 							  GLOBAL_NAMESPACE_MODIFIERS_LEN);
-	else if (t->type == TokenType::IMPORT)
-		return parseImport();
-	else if (t->type == TokenType::META_SRCLOCK)
+	else if (t->type == TokenType::IMPORT) {
+		auto result = parseImport();
+		dynamic_cast<GlobalScope*>(currentScope)->addImport(result);
+		return result;
+	} else if (t->type == TokenType::META_SRCLOCK)
 		return parseSourceLock(
 			dynamic_cast<GlobalScope*>(currentScope)->content);
 	StringBuffer sb;
@@ -604,8 +607,9 @@ Function* Parser::parseFunction(const TokenType* modifiersArray,
 		declaredReturnType = parseTypeRef();
 	}
 
-	Function* function = new Function(modifiers, id, generics, parameters,
-									  declaredReturnType, {}, currentScope);
+	Function* function =
+		new Function(modifiers, id, generics, parameters, declaredReturnType,
+					 {}, currentScope, false);
 	currentScope->addSymbol(function);
 	currentScope = function;
 
@@ -616,10 +620,14 @@ Function* Parser::parseFunction(const TokenType* modifiersArray,
 			new ReturnStatement(meta, parseExpression());
 		function->content.push_back(returnStatement);
 		parseNewlineEquiv();
+
+		function->hasBody = true;
 	} else if (lh(0)->type == TokenType::LBRACE) {
 		advanceAndDelete();
 		parseFunctionBlockContent(function->content);
 		matchAndDelete(TokenType::RBRACE);
+
+		function->hasBody = true;
 	} else {
 		parseNewlineEquiv();
 	}
@@ -1275,7 +1283,7 @@ Alias* Parser::parseAlias(const TokenType* modifiersArray, int modifiersLen) {
 	TypeRef* value = parseTypeRef();
 	parseNewlineEquiv();
 
-	auto result = new Alias(modifiers, id, generics, value);
+	auto result = new Alias(modifiers, id, generics, value, currentScope);
 	currentScope->addSymbol(result);
 	return result;
 }
@@ -2045,7 +2053,8 @@ EnumCase* Parser::parseEnumCase() {
 
 	parseNewlineEquiv();
 
-	auto result = new EnumCase(modifiers, id, args);
+	auto result =
+		new EnumCase(modifiers, id, args, dynamic_cast<Enum*>(currentScope));
 	currentScope->addSymbol(result);
 	return result;
 }

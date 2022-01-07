@@ -27,4 +27,11 @@ struct CompilerContext {
 	Map<String, bool> warnings;
 	CompilerContext();
 };
+
+template <typename T>
+bool listContains(const List<T>& list, const T& t) {
+	for (const auto& e : list)
+		if (e == t) return true;
+	return false;
+}
 }  // namespace acl
