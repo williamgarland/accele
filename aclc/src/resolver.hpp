@@ -22,7 +22,13 @@ class Resolver {
 	std::deque<Scope*> scopes;
 	std::deque<Scope*> lexicalScopes;
 	Ast* ast;
+	CompilerContext& ctx;
 	ResolutionStage maxStage;
+	List<Symbol*> symbolStack;
+
+	void pushSymbol(Symbol* symbol);
+	void popSymbol();
+	bool stackContainsSymbol(Symbol* symbol);
 
 	void pushScope(Scope* scope, bool isLexicalScope);
 	Scope* peekScope();
@@ -30,8 +36,8 @@ class Resolver {
 	Scope* getLexicalScope();
 
    public:
-	Resolver(Ast* ast);
-	Resolver(Ast* ast, ResolutionStage maxStage);
+	Resolver(CompilerContext& ctx, Ast* ast);
+	Resolver(CompilerContext& ctx, Ast* ast, ResolutionStage maxStage);
 	void resolve();
 
    private:
@@ -97,5 +103,24 @@ class Resolver {
 	void resolveLiteralExpression(LiteralExpression* n);
 	void resolveLambdaExpression(LambdaExpression* n);
 	void resolveCastingExpression(CastingExpression* n);
+
+   private:
+	TypeRef* getSymbolReturnType(Symbol* symbol, const SourceMeta& refererMeta);
+	Symbol* getBestCallerForArgs(IdentifierExpression* idexpr,
+								 const List<TypeRef*>& args,
+								 const SourceMeta& callerMeta,
+								 Scope* lexicalScope,
+								 const SearchCriteria& searchCriteria,
+								 TypeRef** destReturnType);
+	void getFunctionCallCandidateTypes(
+		const List<resolve::SearchResult>& candidates,
+		List<List<std::pair<Symbol*, FunctionTypeRef*>>>& candidateTypes,
+		const SourceMeta& callerMeta);
+	void getFunctionCallCandidateType(
+		Symbol* symbol, List<std::pair<Symbol*, FunctionTypeRef*>>& refs,
+		const SourceMeta& callerMeta);
+	void getFcctForType(Type* type,
+						List<std::pair<Symbol*, FunctionTypeRef*>>& refs,
+						const SourceMeta& callerMeta);
 };
 }  // namespace acl

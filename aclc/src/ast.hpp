@@ -336,9 +336,10 @@ struct Parameter : public Symbol {
 struct FunctionBlock : public Node, public Scope {
 	List<Modifier*> modifiers;	// For things like "unsafe" blocks
 	List<Node*> content;
+	TokenType blockType;
 	FunctionBlock(const SourceMeta& sourceMeta,
 				  const List<Modifier*>& modifiers, const List<Node*>& content,
-				  Scope* parentScope);
+				  Scope* parentScope, TokenType blockType);
 	virtual ~FunctionBlock();
 	virtual void toJson(StringBuffer& dest) const override;
 	virtual void addSymbol(Symbol* symbol) override;
@@ -630,16 +631,19 @@ struct ImportTarget : public Node {
 struct ImportSource : public Node {
 	Token* content;
 	ImportSource* parent;
-	ImportSource(Token* content, ImportSource* parent);
+	bool declaredRelative;
+	ImportSource(Token* content, ImportSource* parent, bool declaredRelative);
 	virtual ~ImportSource();
 	virtual void toJson(StringBuffer& dest) const override;
 };
+
+struct Ast;
 
 struct Import : public Symbol {
 	ImportSource* source;
 	Token* alias;
 	List<ImportTarget*> targets;
-	GlobalScope* referent;
+	Ast* referent;
 	Import(ImportSource* source, Token* alias,
 		   const List<ImportTarget*>& targets);
 	virtual ~Import();
@@ -663,7 +667,8 @@ ResolutionStage operator++(ResolutionStage& rs, int);
 struct Ast {
 	ResolutionStage stage;
 	GlobalScope* globalScope;
-	Ast(GlobalScope* globalScope);
+	ModuleInfo moduleInfo;
+	Ast(GlobalScope* globalScope, const ModuleInfo& moduleInfo);
 	~Ast();
 };
 

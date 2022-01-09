@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "exceptions.hpp"
+#include "import_handler.hpp"
 #include "invariant_types.hpp"
 #include "type_builder.hpp"
 
@@ -55,7 +56,8 @@ static void resolveSymbol0(List<resolve::SearchResult>& dest, Scope* scope,
 	if (allowExternal) {
 		if (GlobalScope* gs = dynamic_cast<GlobalScope*>(scope)) {
 			for (auto& i : gs->imports) {
-				resolveSymbol0(dest, i->referent, id, false, false, targets);
+				resolveSymbol0(dest, i->referent->globalScope, id, false, false,
+							   targets);
 			}
 		}
 	}
@@ -295,7 +297,7 @@ Symbol* getSymbolReferent(const List<resolve::SearchResult>& results,
 		   << " at line " << problem.location.line << ", col "
 		   << problem.location.col;
 		String s = sb.str();
-		warn(s);
+		log::warn(s);
 	}
 
 	return initialCandidate.symbol;
@@ -402,88 +404,6 @@ int getFunctionArgsScore(const List<TypeRef*>& expected,
 	return result;
 }
 
-void getFunctionCallCandidateType(
-	Symbol* symbol, List<std::pair<Symbol*, FunctionTypeRef*>>& refs);
-
-void getFcctForType(Type* type,
-					List<std::pair<Symbol*, FunctionTypeRef*>>& refs) {
-	if (Class* n = dynamic_cast<Class*>(type)) {
-		for (auto& s : n->symbols) {
-			if (Constructor* c = dynamic_cast<Constructor*>(s)) {
-				List<std::pair<Symbol*, FunctionTypeRef*>> tmprefs;
-				getFunctionCallCandidateType(c, tmprefs);
-				refs.push_back(tmprefs[0]);
-			}
-		}
-	} else if (Struct* n = dynamic_cast<Struct*>(type)) {
-		for (auto& s : n->symbols) {
-			if (Constructor* c = dynamic_cast<Constructor*>(s)) {
-				List<std::pair<Symbol*, FunctionTypeRef*>> tmprefs;
-				getFunctionCallCandidateType(c, tmprefs);
-				refs.push_back(tmprefs[0]);
-			}
-		}
-	} else if (Template* n = dynamic_cast<Template*>(type)) {
-		throw AclException(ASP_CORE_UNKNOWN, type->sourceMeta,
-						   "Templates do not have constructors");
-	} else if (Enum* n = dynamic_cast<Enum*>(type)) {
-		for (auto& s : n->symbols) {
-			if (Constructor* c = dynamic_cast<Constructor*>(s)) {
-				List<std::pair<Symbol*, FunctionTypeRef*>> tmprefs;
-				getFunctionCallCandidateType(c, tmprefs);
-				refs.push_back(tmprefs[0]);
-			}
-		}
-	} else if (Alias* n = dynamic_cast<Alias*>(type)) {
-		// TODO: Generics might need to be handled here somehow...
-		getFcctForType(n->value->actualType, refs);
-	} else
-		throw AclException(ASP_CORE_UNKNOWN, type->sourceMeta, "Unknown type");
-}
-
-// WARNING: This function assumes the candidates have already been resolved!
-// This should be fixed to resolve them on the fly if they're not ready.
-void getFunctionCallCandidateType(
-	Symbol* symbol, List<std::pair<Symbol*, FunctionTypeRef*>>& refs) {
-	if (Function* f = dynamic_cast<Function*>(symbol)) {
-		List<TypeRef*> paramTypes;
-		for (auto& p : f->parameters) paramTypes.push_back(p->actualType);
-		refs.push_back(std::make_pair(
-			symbol, tb::function(paramTypes, f->actualReturnType)));
-	} else if (Variable* v = dynamic_cast<Variable*>(symbol)) {
-		refs.push_back(std::make_pair(
-			symbol, dynamic_cast<FunctionTypeRef*>(v->actualType)));
-	} else if (Parameter* p = dynamic_cast<Parameter*>(symbol)) {
-		refs.push_back(std::make_pair(
-			symbol, dynamic_cast<FunctionTypeRef*>(p->actualType)));
-	} else if (EnumCase* e = dynamic_cast<EnumCase*>(symbol)) {
-		throw AclException(
-			ASP_CORE_UNKNOWN, symbol->sourceMeta,
-			"Enum cases cannot be the caller of a function call expression");
-	} else if (Constructor* c = dynamic_cast<Constructor*>(symbol)) {
-		Type* owningType = dynamic_cast<Type*>(c->parentScope);
-		List<TypeRef*> paramTypes;
-		for (auto& p : c->parameters) paramTypes.push_back(p->actualType);
-		refs.push_back(std::make_pair(
-			symbol, tb::function(paramTypes, tb::base(owningType, {},
-													  symbol->sourceMeta))));
-	} else if (Type* t = dynamic_cast<Type*>(symbol)) {
-		return getFcctForType(t, refs);
-	} else
-		throw AclException(ASP_CORE_UNKNOWN, symbol->sourceMeta,
-						   "Unknown symbol");
-}
-
-void getFunctionCallCandidateTypes(
-	const List<resolve::SearchResult>& candidates,
-	List<List<std::pair<Symbol*, FunctionTypeRef*>>>& candidateTypes) {
-	for (auto& c : candidates) {
-		List<std::pair<Symbol*, FunctionTypeRef*>> refs;
-		getFunctionCallCandidateType(c.symbol, refs);
-		candidateTypes.push_back(refs);
-	}
-}
-
 struct FCCandidate {
 	int score;
 	bool variadic;
@@ -551,85 +471,6 @@ resolve::SearchResult getFccSearchResult(const resolve::SearchResult& original,
 		return {symbol, original.owningScope, original.origin};
 }
 
-Symbol* getBestCallerForArgs(IdentifierExpression* idexpr,
-							 const List<TypeRef*>& args,
-							 const SourceMeta& callerMeta, Scope* lexicalScope,
-							 const SearchCriteria& searchCriteria,
-							 TypeRef** destReturnType) {
-	List<List<std::pair<Symbol*, FunctionTypeRef*>>> candidateTypes;
-	getFunctionCallCandidateTypes(idexpr->possibleReferents, candidateTypes);
-
-	List<List<FCCandidate>> candidateScores;
-	getFunctionCallCandidateScores(candidateTypes, args, candidateScores,
-								   callerMeta);
-
-	List<std::pair<int, int>> indices;
-	sortFccScores(candidateScores, indices);
-
-	Symbol* result = nullptr;
-	for (auto& e : indices) {
-		if (candidateScores[std::get<0>(e)][std::get<1>(e)].score == -1)
-			continue;
-		else {
-			// TODO: Validate caller here (for things like visibility,
-			// staticness, generics, etc.)
-			List<SymbolCandidateProblem> problems;
-			findSymbolCandidateProblems(
-				getFccSearchResult(
-					idexpr->possibleReferents[std::get<0>(e)],
-					std::get<0>(
-						candidateTypes[std::get<0>(e)][std::get<1>(e)])),
-				idexpr->generics, searchCriteria, callerMeta, lexicalScope,
-				problems);
-
-			if (!problems.empty()) {
-				for (const auto& problem : problems) {
-					StringBuffer sb;
-					sb << "Error " << problem.ec << " in module "
-					   << problem.location.file << " at line "
-					   << problem.location.line << ", col "
-					   << problem.location.col;
-					String s = sb.str();
-					warn(s);
-				}
-
-				throw AclException(ASP_CORE_UNKNOWN, callerMeta,
-								   "Unresolved symbol");
-			}
-
-			result =
-				std::get<0>(candidateTypes[std::get<0>(e)][std::get<1>(e)]);
-			*destReturnType =
-				std::get<1>(candidateTypes[std::get<0>(e)][std::get<1>(e)])
-					->returnType;
-			break;
-		}
-	}
-
-	if (!result)
-		throw AclException(ASP_CORE_UNKNOWN, callerMeta,
-						   "There are no candidate functions or function-like "
-						   "objects that accept the provided arguments");
-
-	return result;
-}
-
-TypeRef* getSymbolReturnType(Symbol* symbol) {
-	if (Variable* n = dynamic_cast<Variable*>(symbol)) return n->actualType;
-	if (Parameter* n = dynamic_cast<Parameter*>(symbol)) return n->actualType;
-	if (EnumCase* n = dynamic_cast<EnumCase*>(symbol))
-		return tb::base(n->enumType, {}, symbol->sourceMeta);
-	if (Function* n = dynamic_cast<Function*>(symbol)) {
-		List<TypeRef*> paramTypes;
-		for (auto& p : n->parameters) paramTypes.push_back(p->actualType);
-		return tb::function(paramTypes, n->actualReturnType);
-	}
-	if (dynamic_cast<Type*>(symbol) || dynamic_cast<Namespace*>(symbol))
-		return nullptr;
-	throw AclException(ASP_CORE_UNKNOWN, symbol->sourceMeta,
-					   "Cannot get return type for symbol");
-}
-
 Scope* getScopeFromTypeRef(TypeRef* n) {
 	auto t = n->actualType;
 	if (Alias* a = dynamic_cast<Alias*>(t))
@@ -643,7 +484,7 @@ Scope* getScopeFromExpression(Expression* n) {
 		if (Namespace* ns = dynamic_cast<Namespace*>(s))
 			return ns;
 		else if (Import* i = dynamic_cast<Import*>(s))
-			return i->referent;
+			return i->referent->globalScope;
 		else if (Type* t = dynamic_cast<Type*>(s)) {
 			if (Alias* a = dynamic_cast<Alias*>(t))
 				return getScopeFromTypeRef(a->value);
@@ -666,9 +507,37 @@ TypeRef* getIteratorElementType(TypeRef* iteratorType) {
 	// TODO: Implement this
 	return nullptr;
 }
+
+bool isOwningFunctionScope(Scope* scope) {
+	if (FunctionBlock* block = dynamic_cast<FunctionBlock*>(scope)) {
+		return block->blockType == TokenType::GET ||
+			   block->blockType == TokenType::INIT;
+	}
+
+	return dynamic_cast<Function*>(scope) ||
+		   dynamic_cast<LambdaExpression*>(scope) ||
+		   dynamic_cast<Constructor*>(scope) ||
+		   dynamic_cast<Destructor*>(scope) || dynamic_cast<SetBlock*>(scope);
+}
+
+Scope* getOwningFunction(Scope* currentScope) {
+	while (currentScope && !isOwningFunctionScope(currentScope))
+		currentScope = currentScope->parentScope;
+	return currentScope;
+}
 }  // namespace
 
 namespace acl {
+void Resolver::pushSymbol(Symbol* symbol) { symbolStack.push_back(symbol); }
+
+void Resolver::popSymbol() { symbolStack.pop_back(); }
+
+bool Resolver::stackContainsSymbol(Symbol* symbol) {
+	for (const auto& s : symbolStack)
+		if (s == symbol) return true;
+	return false;
+}
+
 void Resolver::pushScope(Scope* scope, bool isLexicalScope) {
 	if (!isLexicalScope) {
 		lexicalScopes.push_back(scopes.back());
@@ -704,14 +573,20 @@ Scope* Resolver::getLexicalScope() {
 	return !lexicalScopes.empty() ? lexicalScopes.back() : peekScope();
 }
 
-Resolver::Resolver(Ast* ast) : ast(ast), maxStage(ResolutionStage::RESOLVED) {}
+Resolver::Resolver(CompilerContext& ctx, Ast* ast)
+	: ctx(ctx), ast(ast), maxStage(ResolutionStage::RESOLVED) {}
 
-Resolver::Resolver(Ast* ast, ResolutionStage maxStage)
-	: ast(ast), maxStage(maxStage) {}
+Resolver::Resolver(CompilerContext& ctx, Ast* ast, ResolutionStage maxStage)
+	: ctx(ctx), ast(ast), maxStage(maxStage) {}
 
 void Resolver::resolve() {
 	ast->stage++;
 	do {
+		if (ast->stage == ResolutionStage::EXTERNAL_TYPES) {
+			ImportHandler ih = ImportHandler(ctx, ast);
+			ih.resolveImports();
+		}
+
 		pushScope(ast->globalScope, true);
 		for (auto& c : ast->globalScope->content) {
 			resolveNonLocalContent(c);
@@ -793,6 +668,8 @@ void Resolver::resolveAlias(Alias* n) {
 }
 
 void Resolver::resolveVariable(Variable* n) {
+	pushSymbol(n);
+
 	if (!n->actualType && n->declaredType) {
 		resolveTypeRef(n->declaredType);
 		n->actualType = n->declaredType;
@@ -814,6 +691,8 @@ void Resolver::resolveVariable(Variable* n) {
 			}
 		}
 	}
+
+	popSymbol();
 }
 
 void Resolver::resolveEnumCase(EnumCase* n) {
@@ -836,6 +715,7 @@ void Resolver::resolveConstructor(Constructor* n) {
 }
 
 void Resolver::resolveFunction(Function* n) {
+	pushSymbol(n);
 	pushScope(n, true);
 	for (auto& g : n->generics) resolveGenericType(g);
 	for (auto& p : n->parameters) resolveParameter(p, nullptr);
@@ -851,13 +731,16 @@ void Resolver::resolveFunction(Function* n) {
 
 	if (ast->stage != ResolutionStage::INTERNAL_TYPES &&
 		ast->stage != ResolutionStage::EXTERNAL_TYPES) {
-		TypeRef* returnType = nullptr;
-		for (auto& c : n->content) resolveLocalContent(c, &returnType);
-
-		if (!n->actualReturnType) n->actualReturnType = returnType;
+		try {
+			TypeRef* returnType = nullptr;
+			for (auto& c : n->content) resolveLocalContent(c, &returnType);
+			if (!n->actualReturnType) n->actualReturnType = returnType;
+		} catch (RecursiveResolutionException& e) {
+		}
 	}
 
 	popScope();
+	popSymbol();
 }
 
 void Resolver::resolveGenericType(GenericType* n) {
@@ -1072,16 +955,43 @@ void Resolver::resolveTryBlock(TryBlock* n, TypeRef** destReturnType) {
 
 void Resolver::resolveReturnStatement(ReturnStatement* n,
 									  TypeRef** destReturnType) {
+	auto f = getOwningFunction(peekScope());
+
 	TypeRef* returnType = nullptr;
 
 	if (n->value) {
-		resolveExpression(n->value);
-		returnType = n->value->valueType;
-	} else
+		if (!n->value->valueType) {
+			try {
+				resolveExpression(n->value);
+				returnType = n->value->valueType;
+			} catch (RecursiveResolutionException& e) {
+				if (ast->stage != ResolutionStage::INTERNAL_ALL &&
+					ast->stage != ResolutionStage::RESOLVED)
+					throw e;
+				if (Function* func = dynamic_cast<Function*>(f)) {
+					auto g = generateGenericType(
+						func->generics, func->sourceMeta, n->sourceMeta);
+					returnType = g;
+				} else {
+					returnType =
+						tb::base(const_cast<bt::InvariantType*>(bt::ANY), {},
+								 n->sourceMeta);
+				}
+			}
+		} else
+			returnType = n->value->valueType;
+	} else {
 		returnType = tb::base(const_cast<bt::InvariantType*>(bt::VOID), {},
 							  n->sourceMeta);
+	}
 
-	if (destReturnType) {
+	if (Function* func = dynamic_cast<Function*>(f)) {
+		if (func->declaredReturnType &&
+			!type::canCastTo(returnType, func->declaredReturnType)) {
+			throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
+							   "Invalid return statement");
+		}
+	} else if (destReturnType) {
 		if (!*destReturnType)
 			*destReturnType = returnType;
 		else if (((*destReturnType)->actualType == bt::VOID ||
@@ -1464,7 +1374,7 @@ void Resolver::resolveIdentifierExpression(IdentifierExpression* n,
 	if (actualCriteria.requireExactMatch) {
 		n->referent = getSymbolReferent(results, n->generics, actualCriteria,
 										n->sourceMeta, getLexicalScope());
-		n->valueType = getSymbolReturnType(n->referent);
+		n->valueType = getSymbolReturnType(n->referent, n->sourceMeta);
 	} else
 		n->possibleReferents.insert(n->possibleReferents.end(), results.begin(),
 									results.end());
@@ -1614,5 +1524,184 @@ void Resolver::resolveCastingExpression(CastingExpression* n) {
 						   "Invalid casting operator");
 }
 
+#pragma endregion
+
+#pragma region HelperFunctions
+TypeRef* Resolver::getSymbolReturnType(Symbol* symbol,
+									   const SourceMeta& refererMeta) {
+	if (Variable* n = dynamic_cast<Variable*>(symbol)) {
+		if (!n->actualType) {
+			if (stackContainsSymbol(n))
+				throw AclException(
+					ASP_CORE_UNKNOWN, refererMeta,
+					"Cannot reference a variable before it is defined");
+			resolveVariable(n);
+		}
+		return n->actualType;
+	}
+	if (Parameter* n = dynamic_cast<Parameter*>(symbol)) return n->actualType;
+	if (EnumCase* n = dynamic_cast<EnumCase*>(symbol))
+		return tb::base(n->enumType, {}, symbol->sourceMeta);
+	if (Function* n = dynamic_cast<Function*>(symbol)) {
+		if (!n->actualReturnType) {
+			if (stackContainsSymbol(n)) throw RecursiveResolutionException();
+			resolveFunction(n);
+		}
+		List<TypeRef*> paramTypes;
+		for (auto& p : n->parameters) paramTypes.push_back(p->actualType);
+		return tb::function(paramTypes, n->actualReturnType);
+	}
+	if (dynamic_cast<Type*>(symbol) || dynamic_cast<Namespace*>(symbol))
+		return nullptr;
+	throw AclException(ASP_CORE_UNKNOWN, symbol->sourceMeta,
+					   "Cannot get return type for symbol");
+}
+
+void Resolver::getFunctionCallCandidateType(
+	Symbol* symbol, List<std::pair<Symbol*, FunctionTypeRef*>>& refs,
+	const SourceMeta& callerMeta) {
+	if (dynamic_cast<Variable*>(symbol) || dynamic_cast<Parameter*>(symbol)) {
+		refs.push_back(std::make_pair(
+			symbol, dynamic_cast<FunctionTypeRef*>(
+						getSymbolReturnType(symbol, callerMeta))));
+	} else if (Function* f = dynamic_cast<Function*>(symbol)) {
+		if (!f->actualReturnType) {
+			if (stackContainsSymbol(f)) throw RecursiveResolutionException();
+			resolveFunction(f);
+		}
+		List<TypeRef*> paramTypes;
+		for (auto& p : f->parameters) paramTypes.push_back(p->actualType);
+		refs.push_back(std::make_pair(
+			symbol, tb::function(paramTypes, f->actualReturnType)));
+	} else if (EnumCase* e = dynamic_cast<EnumCase*>(symbol)) {
+		throw AclException(
+			ASP_CORE_UNKNOWN, symbol->sourceMeta,
+			"Enum cases cannot be the caller of a function call expression");
+	} else if (Constructor* c = dynamic_cast<Constructor*>(symbol)) {
+		Type* owningType = dynamic_cast<Type*>(c->parentScope);
+		List<TypeRef*> paramTypes;
+		for (auto& p : c->parameters) paramTypes.push_back(p->actualType);
+		refs.push_back(std::make_pair(
+			symbol, tb::function(paramTypes, tb::base(owningType, {},
+													  symbol->sourceMeta))));
+	} else if (Type* t = dynamic_cast<Type*>(symbol)) {
+		return getFcctForType(t, refs, callerMeta);
+	} else
+		throw AclException(ASP_CORE_UNKNOWN, symbol->sourceMeta,
+						   "Unknown symbol");
+}
+
+void Resolver::getFunctionCallCandidateTypes(
+	const List<resolve::SearchResult>& candidates,
+	List<List<std::pair<Symbol*, FunctionTypeRef*>>>& candidateTypes,
+	const SourceMeta& callerMeta) {
+	for (auto& c : candidates) {
+		List<std::pair<Symbol*, FunctionTypeRef*>> refs;
+		getFunctionCallCandidateType(c.symbol, refs, callerMeta);
+		candidateTypes.push_back(refs);
+	}
+}
+
+Symbol* Resolver::getBestCallerForArgs(IdentifierExpression* idexpr,
+									   const List<TypeRef*>& args,
+									   const SourceMeta& callerMeta,
+									   Scope* lexicalScope,
+									   const SearchCriteria& searchCriteria,
+									   TypeRef** destReturnType) {
+	List<List<std::pair<Symbol*, FunctionTypeRef*>>> candidateTypes;
+	getFunctionCallCandidateTypes(idexpr->possibleReferents, candidateTypes,
+								  callerMeta);
+
+	List<List<FCCandidate>> candidateScores;
+	getFunctionCallCandidateScores(candidateTypes, args, candidateScores,
+								   callerMeta);
+
+	List<std::pair<int, int>> indices;
+	sortFccScores(candidateScores, indices);
+
+	Symbol* result = nullptr;
+	for (auto& e : indices) {
+		if (candidateScores[std::get<0>(e)][std::get<1>(e)].score == -1)
+			continue;
+		else {
+			// TODO: Validate caller here (for things like visibility,
+			// staticness, generics, etc.)
+			List<SymbolCandidateProblem> problems;
+			findSymbolCandidateProblems(
+				getFccSearchResult(
+					idexpr->possibleReferents[std::get<0>(e)],
+					std::get<0>(
+						candidateTypes[std::get<0>(e)][std::get<1>(e)])),
+				idexpr->generics, searchCriteria, callerMeta, lexicalScope,
+				problems);
+
+			if (!problems.empty()) {
+				for (const auto& problem : problems) {
+					StringBuffer sb;
+					sb << "Error " << problem.ec << " in module "
+					   << problem.location.file << " at line "
+					   << problem.location.line << ", col "
+					   << problem.location.col;
+					String s = sb.str();
+					log::warn(s);
+				}
+
+				throw AclException(ASP_CORE_UNKNOWN, callerMeta,
+								   "Unresolved symbol");
+			}
+
+			result =
+				std::get<0>(candidateTypes[std::get<0>(e)][std::get<1>(e)]);
+			*destReturnType =
+				std::get<1>(candidateTypes[std::get<0>(e)][std::get<1>(e)])
+					->returnType;
+			break;
+		}
+	}
+
+	if (!result)
+		throw AclException(ASP_CORE_UNKNOWN, callerMeta,
+						   "There are no candidate functions or function-like "
+						   "objects that accept the provided arguments");
+
+	return result;
+}
+
+void Resolver::getFcctForType(Type* type,
+							  List<std::pair<Symbol*, FunctionTypeRef*>>& refs,
+							  const SourceMeta& callerMeta) {
+	if (Class* n = dynamic_cast<Class*>(type)) {
+		for (auto& s : n->symbols) {
+			if (Constructor* c = dynamic_cast<Constructor*>(s)) {
+				List<std::pair<Symbol*, FunctionTypeRef*>> tmprefs;
+				getFunctionCallCandidateType(c, tmprefs, callerMeta);
+				refs.push_back(tmprefs[0]);
+			}
+		}
+	} else if (Struct* n = dynamic_cast<Struct*>(type)) {
+		for (auto& s : n->symbols) {
+			if (Constructor* c = dynamic_cast<Constructor*>(s)) {
+				List<std::pair<Symbol*, FunctionTypeRef*>> tmprefs;
+				getFunctionCallCandidateType(c, tmprefs, callerMeta);
+				refs.push_back(tmprefs[0]);
+			}
+		}
+	} else if (Template* n = dynamic_cast<Template*>(type)) {
+		throw AclException(ASP_CORE_UNKNOWN, type->sourceMeta,
+						   "Templates do not have constructors");
+	} else if (Enum* n = dynamic_cast<Enum*>(type)) {
+		for (auto& s : n->symbols) {
+			if (Constructor* c = dynamic_cast<Constructor*>(s)) {
+				List<std::pair<Symbol*, FunctionTypeRef*>> tmprefs;
+				getFunctionCallCandidateType(c, tmprefs, callerMeta);
+				refs.push_back(tmprefs[0]);
+			}
+		}
+	} else if (Alias* n = dynamic_cast<Alias*>(type)) {
+		// TODO: Generics might need to be handled here somehow...
+		getFcctForType(n->value->actualType, refs, callerMeta);
+	} else
+		throw AclException(ASP_CORE_UNKNOWN, type->sourceMeta, "Unknown type");
+}
 #pragma endregion
 }  // namespace acl

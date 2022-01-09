@@ -41,6 +41,12 @@ class AclException : public std::exception {
 	virtual const char* what() const noexcept;
 };
 
+class RecursiveResolutionException : public AclException {
+   public:
+	RecursiveResolutionException();
+	virtual ~RecursiveResolutionException();
+};
+
 class LexerException : public AclException {
    public:
 	LexerException();
@@ -77,5 +83,16 @@ class TokenMismatchException : public ParserException {
 	virtual ~TokenMismatchException();
 };
 
+class UnresolvedImportException : public AclException {
+   public:
+	UnresolvedImportException(const String& protocol, const SourceMeta& meta,
+							  const String& message);
+	virtual ~UnresolvedImportException();
+};
+
+namespace log {
 void warn(const String& message);
+void error(const String& message);
+}  // namespace log
+
 }  // namespace acl

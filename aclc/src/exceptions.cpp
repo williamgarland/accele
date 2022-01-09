@@ -25,6 +25,10 @@ void AclException::updateMessage(const String& protocol, const SourceMeta& meta,
 	this->message = sb.str();
 }
 
+RecursiveResolutionException::RecursiveResolutionException() {}
+
+RecursiveResolutionException::~RecursiveResolutionException() {}
+
 LexerException::LexerException()
 	: AclException(ASP_CORE_UNKNOWN, SourceMeta{"(ERR)", -1, -1},
 				   "Lexer exception") {}
@@ -62,8 +66,20 @@ TokenMismatchException::TokenMismatchException(TokenType expected,
 
 TokenMismatchException::~TokenMismatchException() {}
 
+UnresolvedImportException::UnresolvedImportException(const String& protocol,
+													 const SourceMeta& meta,
+													 const String& message)
+	: AclException(protocol, meta, message) {}
+
+UnresolvedImportException::~UnresolvedImportException() {}
+
+namespace log {
 void warn(const String& message) {
 	std::cout << "\u001b[33m[WARN]\u001b[0m: " << message << "\n";
 }
 
+void error(const String& message) {
+	std::cerr << "\u001b[31m[ERROR]\u001b[0m: " << message << "\n";
+}
+}  // namespace log
 }  // namespace acl

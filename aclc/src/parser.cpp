@@ -1,5 +1,7 @@
 #include "parser.hpp"
 
+#include <filesystem>
+
 #include "exceptions.hpp"
 
 namespace {
@@ -389,6 +391,16 @@ const acl::TokenType SET_BLOCK_MODIFIERS[SET_BLOCK_MODIFIERS_LEN] = {
 constexpr int INIT_BLOCK_MODIFIERS_LEN = 2;
 const acl::TokenType INIT_BLOCK_MODIFIERS[INIT_BLOCK_MODIFIERS_LEN] = {
 	acl::TokenType::META_ENABLEWARNING, acl::TokenType::META_DISABLEWARNING};
+
+acl::String getModuleDir(const acl::String& path) {
+	auto p = std::filesystem::absolute(path);
+	return p.parent_path();
+}
+
+acl::String getModuleName(const acl::String& path) {
+	auto p = std::filesystem::absolute(path);
+	return p.stem();
+}
 }  // namespace
 
 namespace acl {
@@ -561,7 +573,10 @@ Ast* Parser::parse() {
 	if (didPanic)
 		throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta, "Parser errors");
 
-	return new Ast(globalScope);
+	return new Ast(
+		globalScope,
+		ModuleInfo{getModuleDir(lexer.getModulePath()), lexer.getModulePath(),
+				   getModuleName(lexer.getModulePath())});
 }
 
 Node* Parser::parseGlobalContent() {
@@ -630,7 +645,7 @@ Node* Parser::parseGlobalContent() {
 		throw AclException(ASP_GLOBAL_SCOPE, t->meta, s);
 	} catch (AclException& e) {
 		String msg = e.what();
-		warn(msg);
+		log::warn(msg);
 		panic(PanicTerminator::STATEMENT_END);
 
 		// This statement will never execute because panic() always throws.
@@ -1909,7 +1924,8 @@ FunctionBlock* Parser::parseGetBlock() {
 	auto meta = lh(0)->meta;
 	matchAndDelete(TokenType::GET);
 	skipNewlines();
-	FunctionBlock* block = new FunctionBlock(meta, modifiers, {}, currentScope);
+	FunctionBlock* block =
+		new FunctionBlock(meta, modifiers, {}, currentScope, TokenType::GET);
 
 	if (lh(0)->type == TokenType::LBRACE) {
 		currentScope = block;
@@ -1961,7 +1977,8 @@ FunctionBlock* Parser::parseInitBlock() {
 	auto meta = lh(0)->meta;
 	matchAndDelete(TokenType::INIT);
 	skipNewlines();
-	FunctionBlock* block = new FunctionBlock(meta, modifiers, {}, currentScope);
+	FunctionBlock* block =
+		new FunctionBlock(meta, modifiers, {}, currentScope, TokenType::INIT);
 
 	currentScope = block;
 	matchAndDelete(TokenType::LBRACE);
@@ -2189,19 +2206,46 @@ ImportSource* Parser::parseImportSource() {
 	auto t = lh(0);
 	if (t->type == TokenType::STRING_LITERAL) {
 		advance();
-		return new ImportSource(t, nullptr);
+		return new ImportSource(t, nullptr, false);
 	}
 
-	match(TokenType::ID);
+	ImportSource* result = nullptr;
 
-	auto result = new ImportSource(t, nullptr);
+	bool relative = false;
+
+	while (t->type == TokenType::DOT || t->type == TokenType::DOUBLE_DOT ||
+		   t->type == TokenType::TRIPLE_DOT) {
+		if (t->type == TokenType::DOUBLE_DOT ||
+			t->type == TokenType::TRIPLE_DOT) {
+			t = relex();
+		}
+
+		relative = true;
+
+		result = new ImportSource(t, result, relative);
+		t = lh(0);
+	}
+
+	if (result && result->parent) {
+		auto tmp = result->parent;
+		result->parent = nullptr;
+		delete result;
+		result = tmp;
+	} else if (result) {
+		delete result;
+		result = nullptr;
+	}
+
+	t = match(TokenType::ID);
+
+	result = new ImportSource(t, result, relative);
 
 	skipNewlines();
 	while (lh(0)->type == TokenType::DOT) {
 		advance();
 		skipNewlines();
 		auto child = match(TokenType::ID);
-		result = new ImportSource(child, result);
+		result = new ImportSource(child, result, relative);
 		skipNewlines();
 	}
 
@@ -2231,7 +2275,7 @@ MetaDeclaration* Parser::parseSourceLock(const List<Node*>& globalContent) {
 		   << t->meta.file << " at " << t->meta.line << ":" << t->meta.col
 		   << ") (ASP " << ASP_SOURCE_LOCK_FRONTING << ")";
 		String s = sb.str();
-		warn(s);
+		log::warn(s);
 	}
 	return new MetaDeclaration(t);
 }
@@ -2323,7 +2367,7 @@ FunctionBlock* Parser::parseFunctionBlock() {
 	auto meta = lh(0)->meta;
 	matchAndDelete(TokenType::LBRACE);
 	FunctionBlock* result =
-		new FunctionBlock(meta, modifiers, {}, currentScope);
+		new FunctionBlock(meta, modifiers, {}, currentScope, TokenType::LBRACE);
 	currentScope = result;
 	parseFunctionBlockContent(result->content);
 	matchAndDelete(TokenType::RBRACE);
@@ -2409,7 +2453,7 @@ Node* Parser::parseSingleFunctionBlockContent() {
 		return result;
 	} catch (AclException& e) {
 		String msg = e.what();
-		warn(msg);
+		log::warn(msg);
 		panic(PanicTerminator::STATEMENT_END);
 
 		// This statement will never execute because panic() always throws.
@@ -2428,7 +2472,8 @@ IfBlock* Parser::parseIfBlock() {
 		advanceAndDelete();
 		skipNewlines();
 		auto blockMeta = lh(0)->meta;
-		block = new FunctionBlock(blockMeta, {}, {}, currentScope);
+		block = new FunctionBlock(blockMeta, {}, {}, currentScope,
+								  TokenType::LBRACE);
 		currentScope = block;
 		block->content.push_back(parseSingleFunctionBlockContent());
 		popScope();
@@ -2448,7 +2493,8 @@ IfBlock* Parser::parseIfBlock() {
 			advanceAndDelete();
 			skipNewlines();
 			auto blockMeta = lh(0)->meta;
-			elifBlock = new FunctionBlock(blockMeta, {}, {}, currentScope);
+			elifBlock = new FunctionBlock(blockMeta, {}, {}, currentScope,
+										  TokenType::LBRACE);
 			currentScope = elifBlock;
 			elifBlock->content.push_back(parseSingleFunctionBlockContent());
 			popScope();
@@ -2467,7 +2513,8 @@ IfBlock* Parser::parseIfBlock() {
 		auto elseMeta = lh(0)->meta;
 		advanceAndDelete();
 		skipNewlines();
-		elseBlock = new FunctionBlock(elseMeta, {}, {}, currentScope);
+		elseBlock = new FunctionBlock(elseMeta, {}, {}, currentScope,
+									  TokenType::LBRACE);
 		currentScope = elseBlock;
 		elseBlock->content.push_back(parseSingleFunctionBlockContent());
 		popScope();
@@ -2486,7 +2533,8 @@ WhileBlock* Parser::parseWhileBlock() {
 		advanceAndDelete();
 		skipNewlines();
 		auto blockMeta = lh(0)->meta;
-		block = new FunctionBlock(blockMeta, {}, {}, currentScope);
+		block = new FunctionBlock(blockMeta, {}, {}, currentScope,
+								  TokenType::LBRACE);
 		currentScope = block;
 		block->content.push_back(parseSingleFunctionBlockContent());
 		popScope();
@@ -2501,7 +2549,8 @@ RepeatBlock* Parser::parseRepeatBlock() {
 	auto meta = lh(0)->meta;
 	matchAndDelete(TokenType::REPEAT);
 	skipNewlines();
-	FunctionBlock* block = new FunctionBlock(lh(0)->meta, {}, {}, currentScope);
+	FunctionBlock* block =
+		new FunctionBlock(lh(0)->meta, {}, {}, currentScope, TokenType::LBRACE);
 	currentScope = block;
 	block->content.push_back(parseSingleFunctionBlockContent());
 	popScope();
@@ -2527,7 +2576,8 @@ ForBlock* Parser::parseForBlock() {
 		advanceAndDelete();
 		skipNewlines();
 		auto blockMeta = lh(0)->meta;
-		block = new FunctionBlock(blockMeta, {}, {}, currentScope);
+		block = new FunctionBlock(blockMeta, {}, {}, currentScope,
+								  TokenType::LBRACE);
 		currentScope = block;
 		block->content.push_back(parseSingleFunctionBlockContent());
 		popScope();
@@ -2562,8 +2612,8 @@ void Parser::parseSwitchBlockCases(List<SwitchCaseBlock*>& dest) {
 			skipNewlines();
 			matchAndDelete(TokenType::COLON);
 			skipNewlines();
-			FunctionBlock* block =
-				new FunctionBlock(t->meta, {}, {}, currentScope);
+			FunctionBlock* block = new FunctionBlock(
+				t->meta, {}, {}, currentScope, TokenType::LBRACE);
 			currentScope = block;
 			parseFunctionBlockContent(block->content);
 			popScope();
@@ -2576,8 +2626,8 @@ void Parser::parseSwitchBlockCases(List<SwitchCaseBlock*>& dest) {
 			skipNewlines();
 			matchAndDelete(TokenType::COLON);
 			skipNewlines();
-			FunctionBlock* block =
-				new FunctionBlock(t->meta, {}, {}, currentScope);
+			FunctionBlock* block = new FunctionBlock(
+				t->meta, {}, {}, currentScope, TokenType::LBRACE);
 			currentScope = block;
 			parseFunctionBlockContent(block->content);
 			popScope();
@@ -2592,7 +2642,8 @@ TryBlock* Parser::parseTryBlock() {
 	auto meta = lh(0)->meta;
 	matchAndDelete(TokenType::TRY);
 	skipNewlines();
-	FunctionBlock* block = new FunctionBlock(lh(0)->meta, {}, {}, currentScope);
+	FunctionBlock* block =
+		new FunctionBlock(lh(0)->meta, {}, {}, currentScope, TokenType::LBRACE);
 	currentScope = block;
 	block->content.push_back(parseSingleFunctionBlockContent());
 	popScope();

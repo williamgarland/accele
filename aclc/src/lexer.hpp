@@ -209,6 +209,7 @@ class Lexer {
 	Lexer(const String& file, StringBuffer& buf);
 	Token* nextToken();
 	bool hasNext() const;
+	const String& getModulePath() const;
 };
 
 class Relexer {

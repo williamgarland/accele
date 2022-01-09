@@ -388,6 +388,8 @@ Token* Lexer::nextToken() {
 }
 
 bool Lexer::hasNext() const { return buf.rdbuf()->in_avail() > 0; }
+
+const String& Lexer::getModulePath() const { return file; }
 }  // namespace acl
 
 namespace acl {

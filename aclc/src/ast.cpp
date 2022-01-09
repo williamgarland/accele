@@ -244,8 +244,10 @@ Node::Node(const SourceMeta& sourceMeta) : sourceMeta(sourceMeta) {}
 
 Node::~Node() {}
 
-Ast::Ast(GlobalScope* globalScope)
-	: globalScope(globalScope), stage(ResolutionStage::UNRESOLVED) {}
+Ast::Ast(GlobalScope* globalScope, const ModuleInfo& moduleInfo)
+	: globalScope(globalScope),
+	  stage(ResolutionStage::UNRESOLVED),
+	  moduleInfo(moduleInfo) {}
 
 Ast::~Ast() { delete globalScope; }
 
@@ -699,11 +701,13 @@ void Parameter::toJson(StringBuffer& dest) const {
 
 FunctionBlock::FunctionBlock(const SourceMeta& sourceMeta,
 							 const List<Modifier*>& modifiers,
-							 const List<Node*>& content, Scope* parentScope)
+							 const List<Node*>& content, Scope* parentScope,
+							 TokenType blockType)
 	: Node(sourceMeta),
 	  Scope(parentScope),
 	  modifiers(modifiers),
-	  content(content) {}
+	  content(content),
+	  blockType(blockType) {}
 
 FunctionBlock::~FunctionBlock() {
 	for (auto& c : modifiers) delete c;
@@ -805,7 +809,7 @@ Variable::Variable(const List<Modifier*>& modifiers, Token* id,
 Variable::~Variable() {
 	for (auto& c : modifiers) delete c;
 	delete declaredType;
-	if (declaredType != actualType) delete actualType;
+	// if (declaredType != actualType) delete actualType;
 	delete value;
 }
 
@@ -1470,8 +1474,12 @@ void ImportTarget::toJson(StringBuffer& dest) const {
 	dest << "\n}";
 }
 
-ImportSource::ImportSource(Token* content, ImportSource* parent)
-	: Node(content->meta), content(content), parent(parent) {}
+ImportSource::ImportSource(Token* content, ImportSource* parent,
+						   bool declaredRelative)
+	: Node(content->meta),
+	  content(content),
+	  parent(parent),
+	  declaredRelative(declaredRelative) {}
 
 ImportSource::~ImportSource() {
 	delete content;

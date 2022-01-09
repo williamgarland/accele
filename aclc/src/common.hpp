@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -21,10 +22,21 @@ struct SourceMeta {
 	int col;
 };
 
+struct ModuleInfo {
+	String dir;
+	String path;
+	String name;
+};
+
+struct Ast;
+
 // Contains common flags and features to be used across all parts of the
 // compilation process.
 struct CompilerContext {
 	Map<String, bool> warnings;
+	List<Ast*> modules;
+	List<std::filesystem::path> additionalImportDirs;
+	std::filesystem::path globalImportDir;
 	CompilerContext();
 };
 
