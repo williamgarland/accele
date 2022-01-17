@@ -73,7 +73,6 @@ enum class TokenType {
 	FALL,
 	GLOBAL,
 	IS,
-	USES,
 
 	// ----- Symbols ----- //
 	TILDE,

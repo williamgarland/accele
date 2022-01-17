@@ -170,10 +170,10 @@ GlobalVariable = GlobalVariableModifier* 'var' ID (':' TypeRef)? ('=' Expression
 GlobalConstant = GlobalConstantModifier* 'const' ID (':' TypeRef)? '=' Expression NL;
 GlobalAlias = GlobalAliasModifier* 'alias' ID Generics? '=' TypeRef NL;
 GlobalFunction = GlobalFunctionModifier* 'fun' ID Generics? '(' Parameters? ')' ('->' TypeRef)? (('=' Expression NL) | FunctionBlock)?;
-GlobalClass = GlobalClassModifier* 'class' ID Generics? (':' TypeRef)? ('uses' TypeRef (',' TypeRef)*)? ClassBlock;
-GlobalStruct = GlobalStructModifier* 'struct' ID Generics? (':' TypeRef)? ('uses' TypeRef (',' TypeRef)*)? ClassBlock;
+GlobalClass = GlobalClassModifier* 'class' ID Generics? (':' TypeRef (',' TypeRef)*)? ClassBlock;
+GlobalStruct = GlobalStructModifier* 'struct' ID Generics? (':' TypeRef (',' TypeRef)*)? ClassBlock;
 GlobalTemplate = GlobalTemplateModifier* 'template' ID Generics? (':' TypeRef (',' TypeRef)*)? ClassBlock;
-GlobalEnum = GlobalEnumModifier* 'enum' ID Generics? ('uses' TypeRef (',' TypeRef)*)? EnumBlock;
+GlobalEnum = GlobalEnumModifier* 'enum' ID Generics? (':' TypeRef (',' TypeRef)*)? EnumBlock;
 GlobalNamespace = GlobalNamespaceModifier* 'namespace' ID Generics? NamespaceBlock;
 Import = FromImport | StandardImport;
 FromImport = 'import' (ImportTarget | '{' ImportTarget (',' ImportTarget)* '}') 'from' (ImportID | StringLiteral);

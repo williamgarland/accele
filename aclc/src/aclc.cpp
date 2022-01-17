@@ -593,6 +593,10 @@ void compileModule(acl::CompilerContext& ctx,
 
 	m->ast = ast;
 
+	if (compilerOptions.dumpAst) {
+		dumpAst(*m, compilerOptions.astDest);
+	}
+
 	acl::Resolver resolver = acl::Resolver(ctx, m);
 	try {
 		resolver.resolve();
@@ -601,10 +605,6 @@ void compileModule(acl::CompilerContext& ctx,
 	}
 
 	// TODO: Handle the rest of compilation here
-
-	if (compilerOptions.dumpAst) {
-		dumpAst(*m, compilerOptions.astDest);
-	}
 }
 
 void setDefaultGlobalImportDir() {

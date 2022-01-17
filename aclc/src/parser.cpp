@@ -1413,33 +1413,24 @@ Class* Parser::parseClass(const TokenType* modifiersArray, int modifiersLen) {
 
 	skipNewlines();
 
-	TypeRef* declaredParentType = nullptr;
+	List<TypeRef*> declaredParentTypes;
 	if (lh(0)->type == TokenType::COLON) {
 		advanceAndDelete();
 		skipNewlines();
-		declaredParentType = parseTypeRef();
-	}
-
-	skipNewlines();
-
-	List<TypeRef*> usedTemplates;
-	if (lh(0)->type == TokenType::USES) {
-		advanceAndDelete();
-		skipNewlines();
-		usedTemplates.push_back(parseTypeRef());
+		declaredParentTypes.push_back(parseTypeRef());
 		skipNewlines();
 		while (lh(0)->type == TokenType::COMMA) {
 			advanceAndDelete();
 			skipNewlines();
-			usedTemplates.push_back(parseTypeRef());
+			declaredParentTypes.push_back(parseTypeRef());
 			skipNewlines();
 		}
 	}
 
 	matchAndDelete(TokenType::LBRACE);
 
-	auto result = new Class(modifiers, id, generics, declaredParentType,
-							usedTemplates, {}, currentScope);
+	auto result = new Class(modifiers, id, generics, declaredParentTypes, {},
+							currentScope);
 	currentScope->addSymbol(result);
 	currentScope = result;
 	parseClassContent(result->content);
@@ -1463,33 +1454,24 @@ Struct* Parser::parseStruct(const TokenType* modifiersArray, int modifiersLen) {
 
 	skipNewlines();
 
-	TypeRef* declaredParentType = nullptr;
+	List<TypeRef*> declaredParentTypes;
 	if (lh(0)->type == TokenType::COLON) {
 		advanceAndDelete();
 		skipNewlines();
-		declaredParentType = parseTypeRef();
-	}
-
-	skipNewlines();
-
-	List<TypeRef*> usedTemplates;
-	if (lh(0)->type == TokenType::USES) {
-		advanceAndDelete();
-		skipNewlines();
-		usedTemplates.push_back(parseTypeRef());
+		declaredParentTypes.push_back(parseTypeRef());
 		skipNewlines();
 		while (lh(0)->type == TokenType::COMMA) {
 			advanceAndDelete();
 			skipNewlines();
-			usedTemplates.push_back(parseTypeRef());
+			declaredParentTypes.push_back(parseTypeRef());
 			skipNewlines();
 		}
 	}
 
 	matchAndDelete(TokenType::LBRACE);
 
-	auto result = new Struct(modifiers, id, generics, declaredParentType,
-							 usedTemplates, {}, currentScope);
+	auto result = new Struct(modifiers, id, generics, declaredParentTypes, {},
+							 currentScope);
 	currentScope->addSymbol(result);
 	currentScope = result;
 	parseClassContent(result->content);
@@ -1555,24 +1537,24 @@ Enum* Parser::parseEnum(const TokenType* modifiersArray, int modifiersLen) {
 
 	skipNewlines();
 
-	List<TypeRef*> usedTemplates;
-	if (lh(0)->type == TokenType::USES) {
+	List<TypeRef*> declaredParentTypes;
+	if (lh(0)->type == TokenType::COLON) {
 		advanceAndDelete();
 		skipNewlines();
-		usedTemplates.push_back(parseTypeRef());
+		declaredParentTypes.push_back(parseTypeRef());
 		skipNewlines();
 		while (lh(0)->type == TokenType::COMMA) {
 			advanceAndDelete();
 			skipNewlines();
-			usedTemplates.push_back(parseTypeRef());
+			declaredParentTypes.push_back(parseTypeRef());
 			skipNewlines();
 		}
 	}
 
 	matchAndDelete(TokenType::LBRACE);
 
-	auto result =
-		new Enum(modifiers, id, generics, usedTemplates, {}, currentScope);
+	auto result = new Enum(modifiers, id, generics, declaredParentTypes, {},
+						   currentScope);
 	currentScope->addSymbol(result);
 	currentScope = result;
 	parseEnumContent(result->content);

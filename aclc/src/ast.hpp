@@ -534,12 +534,11 @@ struct VariableBlock : public Node {
 
 struct Class : public Type, public Scope {
 	List<Modifier*> modifiers;
-	TypeRef* declaredParentType;
-	List<TypeRef*> usedTemplates;
+	List<TypeRef*> declaredParentTypes;
 	List<Node*> content;
 	Class(const List<Modifier*>& modifiers, Token* id,
-		  const List<GenericType*>& generics, TypeRef* declaredParentType,
-		  const List<TypeRef*>& usedTemplates, const List<Node*>& content,
+		  const List<GenericType*>& generics,
+		  const List<TypeRef*>& declaredParentTypes, const List<Node*>& content,
 		  Scope* parentScope);
 	virtual ~Class();
 	virtual void toJson(StringBuffer& dest) const override;
@@ -547,13 +546,12 @@ struct Class : public Type, public Scope {
 
 struct Struct : public Type, public Scope {
 	List<Modifier*> modifiers;
-	TypeRef* declaredParentType;
-	List<TypeRef*> usedTemplates;
+	List<TypeRef*> declaredParentTypes;
 	List<Node*> content;
 	Struct(const List<Modifier*>& modifiers, Token* id,
-		   const List<GenericType*>& generics, TypeRef* declaredParentType,
-		   const List<TypeRef*>& usedTemplates, const List<Node*>& content,
-		   Scope* parentScope);
+		   const List<GenericType*>& generics,
+		   const List<TypeRef*>& declaredParentTypes,
+		   const List<Node*>& content, Scope* parentScope);
 	virtual ~Struct();
 	virtual void toJson(StringBuffer& dest) const override;
 };
@@ -572,11 +570,11 @@ struct Template : public Type, public Scope {
 
 struct Enum : public Type, public Scope {
 	List<Modifier*> modifiers;
-	List<TypeRef*> usedTemplates;
+	List<TypeRef*> declaredParentTypes;
 	List<Node*> content;
 	Enum(const List<Modifier*>& modifiers, Token* id,
 		 const List<GenericType*>& generics,
-		 const List<TypeRef*>& usedTemplates, const List<Node*>& content,
+		 const List<TypeRef*>& declaredParentTypes, const List<Node*>& content,
 		 Scope* parentScope);
 	virtual ~Enum();
 	virtual void toJson(StringBuffer& dest) const override;

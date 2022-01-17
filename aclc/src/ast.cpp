@@ -1171,18 +1171,16 @@ void VariableBlock::toJson(StringBuffer& dest) const {
 }
 
 Class::Class(const List<Modifier*>& modifiers, Token* id,
-			 const List<GenericType*>& generics, TypeRef* declaredParentType,
-			 const List<TypeRef*>& usedTemplates, const List<Node*>& content,
-			 Scope* parentScope)
+			 const List<GenericType*>& generics,
+			 const List<TypeRef*>& declaredParentTypes,
+			 const List<Node*>& content, Scope* parentScope)
 	: Type(id, generics),
 	  Scope(parentScope),
 	  modifiers(modifiers),
-	  declaredParentType(declaredParentType),
-	  usedTemplates(usedTemplates),
+	  declaredParentTypes(declaredParentTypes),
 	  content(content) {
 	for (auto& g : generics) addSymbol(g);
-	if (declaredParentType) parentTypes.push_back(declaredParentType);
-	for (auto& p : usedTemplates) parentTypes.push_back(p);
+	for (auto& p : declaredParentTypes) parentTypes.push_back(p);
 	if (parentTypes.empty())
 		parentTypes.push_back(
 			tb::base(const_cast<bt::InvariantType*>(bt::ANY), {}, sourceMeta));
@@ -1190,8 +1188,7 @@ Class::Class(const List<Modifier*>& modifiers, Token* id,
 
 Class::~Class() {
 	for (auto& c : modifiers) delete c;
-	delete declaredParentType;
-	for (auto& c : usedTemplates) delete c;
+	for (auto& c : declaredParentTypes) delete c;
 	for (auto& c : content) delete c;
 }
 
@@ -1204,13 +1201,8 @@ void Class::toJson(StringBuffer& dest) const {
 	dest << "\"generics\": ";
 	json::appendList<GenericType*>(
 		dest, generics, [](auto& d, const auto& e) { e->toJson(d); });
-	dest << ",\n\"declaredParentType\": ";
-	if (declaredParentType)
-		declaredParentType->toJson(dest);
-	else
-		dest << "null";
-	dest << ",\n\"usedTemplates\": ";
-	json::appendList<TypeRef*>(dest, usedTemplates,
+	dest << ",\n\"declaredParentTypes\": ";
+	json::appendList<TypeRef*>(dest, declaredParentTypes,
 							   [](auto& d, const auto& e) { e->toJson(d); });
 	dest << ",\n\"content\": ";
 	json::appendList<Node*>(dest, content,
@@ -1219,18 +1211,16 @@ void Class::toJson(StringBuffer& dest) const {
 }
 
 Struct::Struct(const List<Modifier*>& modifiers, Token* id,
-			   const List<GenericType*>& generics, TypeRef* declaredParentType,
-			   const List<TypeRef*>& usedTemplates, const List<Node*>& content,
-			   Scope* parentScope)
+			   const List<GenericType*>& generics,
+			   const List<TypeRef*>& declaredParentTypes,
+			   const List<Node*>& content, Scope* parentScope)
 	: Type(id, generics),
 	  Scope(parentScope),
 	  modifiers(modifiers),
-	  declaredParentType(declaredParentType),
-	  usedTemplates(usedTemplates),
+	  declaredParentTypes(declaredParentTypes),
 	  content(content) {
 	for (auto& g : generics) addSymbol(g);
-	if (declaredParentType) parentTypes.push_back(declaredParentType);
-	for (auto& p : usedTemplates) parentTypes.push_back(p);
+	for (auto& p : declaredParentTypes) parentTypes.push_back(p);
 	if (parentTypes.empty())
 		parentTypes.push_back(
 			tb::base(const_cast<bt::InvariantType*>(bt::ANY), {}, sourceMeta));
@@ -1238,8 +1228,7 @@ Struct::Struct(const List<Modifier*>& modifiers, Token* id,
 
 Struct::~Struct() {
 	for (auto& c : modifiers) delete c;
-	delete declaredParentType;
-	for (auto& c : usedTemplates) delete c;
+	for (auto& c : declaredParentTypes) delete c;
 	for (auto& c : content) delete c;
 }
 
@@ -1252,13 +1241,8 @@ void Struct::toJson(StringBuffer& dest) const {
 	dest << "\"generics\": ";
 	json::appendList<GenericType*>(
 		dest, generics, [](auto& d, const auto& e) { e->toJson(d); });
-	dest << ",\n\"declaredParentType\": ";
-	if (declaredParentType)
-		declaredParentType->toJson(dest);
-	else
-		dest << "null";
-	dest << ",\n\"usedTemplates\": ";
-	json::appendList<TypeRef*>(dest, usedTemplates,
+	dest << ",\n\"declaredParentTypes\": ";
+	json::appendList<TypeRef*>(dest, declaredParentTypes,
 							   [](auto& d, const auto& e) { e->toJson(d); });
 	dest << ",\n\"content\": ";
 	json::appendList<Node*>(dest, content,
@@ -1308,15 +1292,15 @@ void Template::toJson(StringBuffer& dest) const {
 
 Enum::Enum(const List<Modifier*>& modifiers, Token* id,
 		   const List<GenericType*>& generics,
-		   const List<TypeRef*>& usedTemplates, const List<Node*>& content,
-		   Scope* parentScope)
+		   const List<TypeRef*>& declaredParentTypes,
+		   const List<Node*>& content, Scope* parentScope)
 	: Type(id, generics),
 	  Scope(parentScope),
 	  modifiers(modifiers),
-	  usedTemplates(usedTemplates),
+	  declaredParentTypes(declaredParentTypes),
 	  content(content) {
 	for (auto& g : generics) addSymbol(g);
-	for (auto& p : usedTemplates) parentTypes.push_back(p);
+	for (auto& p : declaredParentTypes) parentTypes.push_back(p);
 	if (parentTypes.empty())
 		parentTypes.push_back(
 			tb::base(const_cast<bt::InvariantType*>(bt::ANY), {}, sourceMeta));
@@ -1324,7 +1308,7 @@ Enum::Enum(const List<Modifier*>& modifiers, Token* id,
 
 Enum::~Enum() {
 	for (auto& c : modifiers) delete c;
-	for (auto& c : usedTemplates) delete c;
+	for (auto& c : declaredParentTypes) delete c;
 	for (auto& c : content) delete c;
 }
 
@@ -1337,8 +1321,8 @@ void Enum::toJson(StringBuffer& dest) const {
 	dest << "\"generics\": ";
 	json::appendList<GenericType*>(
 		dest, generics, [](auto& d, const auto& e) { e->toJson(d); });
-	dest << ",\n\"usedTemplates\": ";
-	json::appendList<TypeRef*>(dest, usedTemplates,
+	dest << ",\n\"declaredParentTypes\": ";
+	json::appendList<TypeRef*>(dest, declaredParentTypes,
 							   [](auto& d, const auto& e) { e->toJson(d); });
 	dest << ",\n\"content\": ";
 	json::appendList<Node*>(dest, content,

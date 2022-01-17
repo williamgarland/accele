@@ -73,7 +73,6 @@ Map<TokenType, String> TOKEN_TYPE_STRINGS = {
 	{TokenType::FALL, "fall"},
 	{TokenType::GLOBAL, "global"},
 	{TokenType::IS, "is"},
-	{TokenType::USES, "uses"},
 	{TokenType::TILDE, "~"},
 	{TokenType::EXCLAMATION_POINT, "!"},
 	{TokenType::PERCENT, "%"},
@@ -684,7 +683,6 @@ TokenType getIdentifierType(const String& str) {
 	if (str == "fall") return TokenType::FALL;
 	if (str == "global") return TokenType::GLOBAL;
 	if (str == "is") return TokenType::IS;
-	if (str == "uses") return TokenType::USES;
 	if (str == "true" || str == "false") return TokenType::BOOLEAN_LITERAL;
 	if (str == "nil") return TokenType::NIL_LITERAL;
 
