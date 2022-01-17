@@ -228,7 +228,7 @@ bool diagnoseGenerics(Diagnoser& diagnoser,
 			return true;
 		} else {
 			bool result = false;
-			for (int i = 0; i < generics.size(); i++) {
+			for (std::size_t i = 0; i < generics.size(); i++) {
 				if (!type::genericAcceptsType(n->generics[i], generics[i])) {
 					diagnoser.diagnose(ec::GENERICS_MISMATCH,
 									   generics[i]->sourceMeta, 1);
@@ -237,8 +237,7 @@ bool diagnoseGenerics(Diagnoser& diagnoser,
 			}
 			if (result) return true;
 		}
-	} else if (const GenericType* g =
-				   dynamic_cast<const GenericType*>(candidate.symbol)) {
+	} else if (dynamic_cast<const GenericType*>(candidate.symbol)) {
 		if (!generics.empty()) {
 			diagnoser.diagnose(ec::TOO_MANY_GENERICS,
 							   generics.back()->sourceMeta, 1);
@@ -256,7 +255,7 @@ bool diagnoseGenerics(Diagnoser& diagnoser,
 			return true;
 		}
 		bool result = false;
-		for (int i = 0; i < generics.size(); i++) {
+		for (std::size_t i = 0; i < generics.size(); i++) {
 			if (!type::genericAcceptsType(n->generics[i], generics[i])) {
 				diagnoser.diagnose(ec::GENERICS_MISMATCH,
 								   generics[i]->sourceMeta, 1);
@@ -272,7 +271,7 @@ bool diagnoseGenerics(Diagnoser& diagnoser,
 			return true;
 		}
 		bool result = false;
-		for (int i = 0; i < generics.size(); i++) {
+		for (std::size_t i = 0; i < generics.size(); i++) {
 			if (!type::genericAcceptsType(n->generics[i], generics[i])) {
 				diagnoser.diagnose(ec::GENERICS_MISMATCH,
 								   generics[i]->sourceMeta, 1);
@@ -295,7 +294,7 @@ bool diagnoseGenerics(Diagnoser& diagnoser,
 			return true;
 		}
 		bool result = false;
-		for (int i = 0; i < generics.size(); i++) {
+		for (std::size_t i = 0; i < generics.size(); i++) {
 			if (!type::genericAcceptsType(targetGenerics[i], generics[i])) {
 				diagnoser.diagnose(ec::GENERICS_MISMATCH,
 								   generics[i]->sourceMeta, 1);
@@ -334,19 +333,15 @@ Symbol* getSymbolReferent(const List<resolve::SearchResult>& results,
 		throw UnresolvedSymbolException(refererToken);
 	}
 
-	bool first = true;
-	List<SymbolCandidateProblem> initialCandidateProblems;
 	StringBuffer tmp;
 	Diagnoser* tmpDiag = new Diagnoser(diagnoser.ctx, tmp);
 	StringBuffer other;
 	for (auto& r : results) {
-		List<SymbolCandidateProblem> problems;
-		findSymbolCandidateProblems(r, generics, searchCriteria, refererToken,
-									lexicalScope, *tmpDiag);
+		bool problems = findSymbolCandidateProblems(
+			r, generics, searchCriteria, refererToken, lexicalScope, *tmpDiag);
 
-		if (problems.empty()) return r.symbol;
+		if (!problems) return r.symbol;
 
-		first = false;
 		delete tmpDiag;
 		tmpDiag = new Diagnoser(diagnoser.ctx, other);
 	}
@@ -378,11 +373,11 @@ bool isStaticContext(Scope* scope) {
 		   dynamic_cast<Constructor*>(currentScope);
 }
 
-int getRequiredArity(const List<TypeRef*>& expected, bool& variadicDest) {
-	int result = 0;
+unsigned getRequiredArity(const List<TypeRef*>& expected, bool& variadicDest) {
+	unsigned result = 0;
 	SourceMeta* initialVarargsMeta = nullptr;
 	for (auto& t : expected) {
-		int amt = 1;
+		unsigned amt = 1;
 		if (SuffixTypeRef* s = dynamic_cast<SuffixTypeRef*>(t)) {
 			if (s->suffixSymbol->type == TokenType::TRIPLE_DOT &&
 				initialVarargsMeta) {
@@ -406,13 +401,13 @@ void validateFunctionCallArgs(const List<TypeRef*>& expected,
 							  const SourceMeta& sourceMeta,
 							  Diagnoser& diagnoser) {
 	bool variadic = false;
-	int required = getRequiredArity(expected, variadic);
+	unsigned required = getRequiredArity(expected, variadic);
 	if (actual.size() < required) {
 		diagnoser.diagnose(ec::INSUFFICIENT_ARGUMENTS, sourceMeta, 1);
 		throw AcceleException();
 	}
 
-	for (int i = 0; i < actual.size(); i++) {
+	for (std::size_t i = 0; i < actual.size(); i++) {
 		auto argType = actual[i];
 		if (i >= expected.size() && !variadic) {
 			diagnoser.diagnose(ec::TOO_MANY_ARGUMENTS, argType->sourceMeta, 1);
@@ -435,10 +430,10 @@ int getFunctionArgsScore(const List<TypeRef*>& expected,
 						 const SourceMeta& callerMeta, bool& variadicDest) {
 	int result = 0;
 
-	int required = getRequiredArity(expected, variadicDest);
+	unsigned required = getRequiredArity(expected, variadicDest);
 	if (actual.size() < required) return -1;
 
-	for (int i = 0; i < actual.size(); i++) {
+	for (std::size_t i = 0; i < actual.size(); i++) {
 		auto argType = actual[i];
 		if (i >= expected.size() && !variadicDest)
 			return -1;
@@ -469,9 +464,9 @@ void getFunctionCallCandidateScores(
 	const List<List<std::pair<Symbol*, FunctionTypeRef*>>>& candidates,
 	const List<TypeRef*>& argTypes, List<List<FCCandidate>>& candidateScores,
 	const SourceMeta& callerMeta) {
-	for (int i = 0; i < candidates.size(); i++) {
+	for (std::size_t i = 0; i < candidates.size(); i++) {
 		List<FCCandidate> tmp;
-		for (int j = 0; j < candidates[i].size(); j++) {
+		for (std::size_t j = 0; j < candidates[i].size(); j++) {
 			bool variadic = false;
 			int score =
 				getFunctionArgsScore(std::get<1>(candidates[i][j])->paramTypes,
@@ -488,8 +483,8 @@ void sortFccScores(const List<List<FCCandidate>>& scores,
 	List<IntermediateType> variadic;
 	List<IntermediateType> nonVariadic;
 
-	for (int i = 0; i < scores.size(); i++) {
-		for (int j = 0; j < scores[i].size(); j++) {
+	for (std::size_t i = 0; i < scores.size(); i++) {
+		for (std::size_t j = 0; j < scores[i].size(); j++) {
 			if (scores[i][j].variadic) {
 				variadic.push_back(
 					std::make_pair(std::make_pair(i, j), &scores[i][j]));
@@ -1100,7 +1095,9 @@ void Resolver::resolveThrowStatement(ThrowStatement* n) {
 	// type)
 }
 
+#ifndef __GNUC__
 #pragma region TypeRef
+#endif
 
 void Resolver::resolveTypeRef(TypeRef* n) {
 	// We don't want to resolve the same thing more than once
@@ -1229,9 +1226,14 @@ void Resolver::resolveSuffixTypeRef(SuffixTypeRef* n) {
 	}
 }
 
+#ifndef __GNUC__
 #pragma endregion
+#endif
 
+#ifndef __GNUC__
 #pragma region Expression
+#endif
+
 void Resolver::resolveExpression(Expression* n) {
 	resolveExpression0(n, nullptr, nullptr);
 }
@@ -1394,8 +1396,8 @@ void Resolver::resolveAccessExpression(BinaryExpression* n,
 		resolveExpression(n->left);
 
 		SuffixTypeRef* s = dynamic_cast<SuffixTypeRef*>(n->left->valueType);
-		if (!s || s->suffixSymbol->type != TokenType::QUESTION_MARK ||
-			s->suffixSymbol->type != TokenType::EXCLAMATION_POINT) {
+		if (!s || (s->suffixSymbol->type != TokenType::QUESTION_MARK &&
+				   s->suffixSymbol->type != TokenType::EXCLAMATION_POINT)) {
 			diagnoser.diagnose(ec::ARGUMENT_TYPE_MISMATCH, n->left->sourceMeta,
 							   1,
 							   "Expected optional type for left-hand argument "
@@ -1633,9 +1635,14 @@ void Resolver::resolveCastingExpression(CastingExpression* n) {
 	}
 }
 
+#ifndef __GNUC__
 #pragma endregion
+#endif
 
+#ifndef __GNUC__
 #pragma region HelperFunctions
+#endif
+
 TypeRef* Resolver::getSymbolReturnType(Symbol* symbol,
 									   const SourceMeta& refererMeta) {
 	if (Variable* n = dynamic_cast<Variable*>(symbol)) {
@@ -1688,7 +1695,7 @@ void Resolver::getFunctionCallCandidateType(
 		for (auto& p : f->parameters) paramTypes.push_back(p->actualType);
 		refs.push_back(std::make_pair(
 			symbol, tb::function(paramTypes, f->actualReturnType)));
-	} else if (EnumCase* e = dynamic_cast<EnumCase*>(symbol)) {
+	} else if (dynamic_cast<EnumCase*>(symbol)) {
 		diagnoser.diagnose(
 			ec::INVALID_FUNCTION_CALLER, callerMeta, symbol->id->data.length(),
 			"Enum cases cannot be the caller of a function call expression");
@@ -1792,7 +1799,7 @@ void Resolver::getFcctForType(Type* type,
 				refs.push_back(tmprefs[0]);
 			}
 		}
-	} else if (Template* n = dynamic_cast<Template*>(type)) {
+	} else if (dynamic_cast<Template*>(type)) {
 		diagnoser.diagnose(ec::TEMPLATE_CONSTRUCTOR, type->sourceMeta, 1,
 						   "Templates do not have constructors");
 		throw AcceleException();
@@ -1812,5 +1819,8 @@ void Resolver::getFcctForType(Type* type,
 		throw AcceleException();
 	}
 }
+
+#ifndef __GNUC__
 #pragma endregion
+#endif
 }  // namespace acl

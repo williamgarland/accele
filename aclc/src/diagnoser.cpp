@@ -93,8 +93,10 @@ const acl::Map<ErrorCode, ECData> ERROR_CODE_DATA = {
 	 {ErrorType::ERROR, "Invalid symbol for expression", "invalidSymbolExpr"}},
 	{TEMPLATE_CONSTRUCTOR,
 	 {ErrorType::ERROR, "Template constructor", "templateConstructor"}},
-	 {UNRESOLVED_SYMBOL, {ErrorType::ERROR, "Unresolved symbol", "unresolvedSymbol"}},
-	 {UNRESOLVED_IMPORT, {ErrorType::ERROR, "Unresolved import", "unresolvedImport"}}};
+	{UNRESOLVED_SYMBOL,
+	 {ErrorType::ERROR, "Unresolved symbol", "unresolvedSymbol"}},
+	{UNRESOLVED_IMPORT,
+	 {ErrorType::ERROR, "Unresolved import", "unresolvedImport"}}};
 }  // namespace
 
 namespace acl {
@@ -382,8 +384,9 @@ void printCodeSnippet(std::ostream& dest, const CompilerContext& ctx,
 	for (int i = 0; i < maxNumberLength; i++)
 		dest << " ";  // Account for line number
 	dest << " | ";
-	for (int i = 1; i <= m->source[begin.line - 1].length(); i++) {
-		if (i >= begin.col && i <= begin.col + highlightLength - 1) {
+	for (std::size_t i = 1; i <= m->source[begin.line - 1].length(); i++) {
+		if (i >= (std::size_t)begin.col &&
+			i <= (std::size_t)(begin.col + highlightLength - 1)) {
 			dest << highlightColor << "^\u001b[0m";
 		} else
 			dest << " ";
@@ -391,7 +394,7 @@ void printCodeSnippet(std::ostream& dest, const CompilerContext& ctx,
 	dest << "\n";
 
 	// print line below
-	if (begin.line < m->source.size()) {
+	if ((std::size_t)begin.line < m->source.size()) {
 		dest << std::setfill('0') << std::setw(maxNumberLength)
 			 << begin.line + 1 << " | ";
 		dest << m->source[begin.line] << "\n";

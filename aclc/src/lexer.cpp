@@ -803,7 +803,7 @@ void Relexer::relexHelper(int current, List<Token*>& dest) {
 	sb << originalToken->data[current++];
 	List<Token*> tmp;
 	tryLex(sb.str(), tmp);
-	while (tmp.empty() && current < originalToken->data.length()) {
+	while (tmp.empty() && (std::size_t)current < originalToken->data.length()) {
 		sb << originalToken->data[current++];
 		tryLex(sb.str(), tmp);
 	}
@@ -812,7 +812,8 @@ void Relexer::relexHelper(int current, List<Token*>& dest) {
 		return;
 	}
 	for (auto& t : tmp) dest.push_back(formatToken(t, start));
-	if (current < originalToken->data.length()) relexHelper(current, dest);
+	if ((std::size_t)current < originalToken->data.length())
+		relexHelper(current, dest);
 }
 
 void Relexer::relex(List<Token*>& dest) { relexHelper(0, dest); }

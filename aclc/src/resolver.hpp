@@ -21,8 +21,8 @@ struct SearchCriteria {
 class Resolver {
 	std::deque<Scope*> scopes;
 	std::deque<Scope*> lexicalScopes;
-	Module* mod;
 	CompilerContext& ctx;
+	Module* mod;
 	ResolutionStage maxStage;
 	List<Symbol*> symbolStack;
 	Diagnoser diagnoser;

@@ -434,7 +434,7 @@ void Parser::matchAndDelete(TokenType type) {
 
 void Parser::advance() {
 	current++;
-	if (current == buffer.size() && !isSpeculating()) {
+	if ((std::size_t)current == buffer.size() && !isSpeculating()) {
 		current = 0;
 		buffer.clear();
 	}
@@ -775,8 +775,8 @@ void Parser::parseNewlineEquiv(bool greedy) {
 	auto t = lh(0);
 	if (t->type == TokenType::NL || t->type == TokenType::SEMICOLON) {
 		advanceAndDelete();
-		while (greedy && lh(0)->type == TokenType::NL ||
-			   lh(0)->type == TokenType::SEMICOLON)
+		while (greedy && (lh(0)->type == TokenType::NL ||
+						  lh(0)->type == TokenType::SEMICOLON))
 			advanceAndDelete();
 	} else if (!isNewlineEquivalent(t->type)) {
 		if (!isSpeculating())
@@ -796,7 +796,9 @@ int Parser::skipNewlines(bool includeSemicolons) {
 	return result;
 }
 
+#ifndef __GNUC__
 #pragma region TypeRef
+#endif
 
 TypeRef* Parser::parseTypeRef() {
 	TypeRef* result;
@@ -912,9 +914,13 @@ TypeRef* Parser::parseSubscriptTypeRef(TypeRef* base) {
 	return new ArrayTypeRef(meta, base);
 }
 
+#ifndef __GNUC__
 #pragma endregion
+#endif
 
+#ifndef __GNUC__
 #pragma region Expression
+#endif
 
 Expression* Parser::parseExpression() { return parseAssignmentExpression(); }
 
@@ -1304,7 +1310,9 @@ void Parser::parseExpressionList(List<Expression*>& dest) {
 	}
 }
 
+#ifndef __GNUC__
 #pragma endregion
+#endif
 
 WarningMetaDeclaration* Parser::parseGlobalWarningMeta() {
 	Token* t = lh(0);
@@ -2074,7 +2082,7 @@ SetBlock* Parser::parseSetBlock() {
 	if (lh(0)->type == TokenType::LPAREN) {
 		matchAndDelete(TokenType::LPAREN);
 		skipNewlines();
-		auto param = parseParameter();
+		param = parseParameter();
 		skipNewlines();
 		matchAndDelete(TokenType::RPAREN);
 		skipNewlines();
@@ -2483,7 +2491,9 @@ void Parser::parseGenericImpl(List<TypeRef*>& dest) {
 	matchAndDelete(TokenType::GT);
 }
 
+#ifndef __GNUC__
 #pragma region FunctionBlockContent
+#endif
 
 FunctionBlock* Parser::parseFunctionBlock() {
 	skipNewlines(true);
@@ -2895,9 +2905,13 @@ WarningMetaDeclaration* Parser::parseLocalWarningMeta() {
 									  parseSingleFunctionBlockContent());
 }
 
+#ifndef __GNUC__
 #pragma endregion
+#endif
 
+#ifndef __GNUC__
 #pragma region GlobalFunctions
+#endif
 
 bool isModifier(TokenType type) {
 	return type == TokenType::INTERNAL || type == TokenType::PUBLIC ||
@@ -3047,5 +3061,7 @@ bool isLocalVariableModifier(TokenType type) {
 		   type == TokenType::META_DISABLEWARNING;
 }
 
+#ifndef __GNUC__
 #pragma endregion
+#endif
 }  // namespace acl

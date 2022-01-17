@@ -102,17 +102,20 @@ struct GlobalScope : public Symbol, public Scope {
 
 struct Type;
 
+enum class ReferenceType { STRONG, WEAK, GREEDY, REF, VALUE, UNKNOWN };
+
 struct TypeRef : public Node {
 	Type* actualType;
+	ReferenceType refType;
 	List<TypeRef*> actualGenerics;
 	TypeRef(const SourceMeta& sourceMeta);
 	virtual ~TypeRef();
 };
 
 struct SimpleTypeRef : public TypeRef {
-	SimpleTypeRef* parent;
 	Token* id;
 	List<TypeRef*> generics;
+	SimpleTypeRef* parent;
 
 	// This is a symbol and not a type because a SimpleTypeRef might be
 	// referencing a namespace or a module alias
@@ -182,6 +185,7 @@ struct SuperTypeRef : public TypeRef {
 
 struct Expression : public Node {
 	TypeRef* valueType;
+	bool immediate;
 	Expression(const SourceMeta& sourceMeta);
 	virtual ~Expression();
 };
@@ -352,8 +356,8 @@ struct Function : public Symbol, public Scope {
 	List<Parameter*> parameters;
 	TypeRef* declaredReturnType;
 	List<Node*> content;
-	TypeRef* actualReturnType;
 	bool hasBody;
+	TypeRef* actualReturnType;
 	Function(const List<Modifier*>& modifiers, Token* id,
 			 const List<GenericType*>& generics,
 			 const List<Parameter*>& parameters, TypeRef* declaredReturnType,
@@ -364,11 +368,11 @@ struct Function : public Symbol, public Scope {
 
 struct Variable : public Symbol {
 	List<Modifier*> modifiers;
-	bool constant;
 	TypeRef* declaredType;
+	TypeRef* actualType;
 	Node* value;  // This is a Node and not an Expression because this could be
 				  // a VariableBlock instead of an Expression
-	TypeRef* actualType;
+	bool constant;
 	Variable(const List<Modifier*>& modifiers, Token* id, TypeRef* declaredType,
 			 Node* value, bool constant);
 	virtual ~Variable();
@@ -579,8 +583,8 @@ struct Enum : public Type, public Scope {
 };
 
 struct Namespace : public Symbol, public Scope {
-	List<GenericType*> generics;
 	List<Modifier*> modifiers;
+	List<GenericType*> generics;
 	List<Node*> content;
 	Namespace(const List<Modifier*>& modifiers, Token* id,
 			  const List<GenericType*>& generics, const List<Node*>& content,
@@ -666,8 +670,8 @@ ResolutionStage& operator++(ResolutionStage& rs);
 ResolutionStage operator++(ResolutionStage& rs, int);
 
 struct Ast {
-	ResolutionStage stage;
 	GlobalScope* globalScope;
+	ResolutionStage stage;
 	Ast(GlobalScope* globalScope);
 	~Ast();
 };

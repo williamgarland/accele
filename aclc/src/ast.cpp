@@ -143,7 +143,7 @@ void getGenerics(List<GenericType*>& dest, Symbol* s) {
 bool genericsAreCompatible(const List<TypeRef*>& supplied,
 						   const List<GenericType*>& target) {
 	if (supplied.size() > target.size()) return false;
-	for (int i = 0; i < supplied.size(); i++)
+	for (std::size_t i = 0; i < supplied.size(); i++)
 		if (!genericAcceptsType(target[i], supplied[i])) return false;
 	return true;
 }
@@ -281,7 +281,7 @@ void GlobalScope::addImport(Import* imp) {
 }
 
 TypeRef::TypeRef(const SourceMeta& sourceMeta)
-	: Node(sourceMeta), actualType(nullptr) {}
+	: Node(sourceMeta), actualType(nullptr), refType(ReferenceType::UNKNOWN) {}
 
 TypeRef::~TypeRef() {}
 
@@ -403,7 +403,7 @@ SuperTypeRef::~SuperTypeRef() {}
 void SuperTypeRef::toJson(StringBuffer& dest) const {}
 
 Expression::Expression(const SourceMeta& sourceMeta)
-	: Node(sourceMeta), valueType(nullptr) {}
+	: Node(sourceMeta), valueType(nullptr), immediate(true) {}
 
 Expression::~Expression() {}
 
@@ -613,7 +613,9 @@ IdentifierExpression::IdentifierExpression(Token* value,
 	: Expression(value->meta),
 	  value(value),
 	  generics(generics),
-	  globalPrefix(globalPrefix) {}
+	  globalPrefix(globalPrefix) {
+	immediate = false;
+}
 
 IdentifierExpression::~IdentifierExpression() {
 	delete value;
@@ -753,9 +755,9 @@ Function::Function(const List<Modifier*>& modifiers, Token* id,
 	  generics(generics),
 	  parameters(parameters),
 	  declaredReturnType(declaredReturnType),
-	  actualReturnType(nullptr),
+	  content(content),
 	  hasBody(hasBody),
-	  content(content) {
+	  actualReturnType(nullptr) {
 	for (auto& g : generics) addSymbol(g);
 	for (auto& p : parameters) addSymbol(p);
 }
@@ -1498,7 +1500,7 @@ static String formatImportAlias(const String& str) {
 		sb << '_';
 	else
 		sb << str[0];
-	for (int i = 1; i < str.length(); i++) {
+	for (std::size_t i = 1; i < str.length(); i++) {
 		if (!isIdentifierPart(str[i])) sb << '_';
 		sb << str[i];
 	}
@@ -1711,8 +1713,7 @@ TokenType getSymbolVisibility(const Scope* owningScope, const Symbol* symbol,
 	} else if (const Constructor* n =
 				   dynamic_cast<const Constructor*>(symbol)) {
 		auto vis = getVisibilityModifier(n->modifiers);
-		if (const Enum* parentEnum =
-				dynamic_cast<const Enum*>(n->parentScope)) {
+		if (dynamic_cast<const Enum*>(n->parentScope)) {
 			if (vis && vis->type != TokenType::PRIVATE) {
 				throw AcceleException(ec::INVALID_MODIFIER, vis->meta,
 									  vis->data.length(),

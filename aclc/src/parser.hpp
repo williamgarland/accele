@@ -14,11 +14,11 @@ void getTypesForPanicTerminator(PanicTerminator terminator,
 								List<TokenType>& dest);
 
 class Parser {
+	CompilerContext& ctx;
 	Lexer lexer;
 	List<Token*> buffer;
 	int current;
 	std::deque<int> marks;
-	CompilerContext& ctx;
 	Scope* currentScope;
 	std::deque<List<Token*>> queuedDeletedTokens;
 	bool panicking;

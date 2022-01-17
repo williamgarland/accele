@@ -8,6 +8,7 @@
                 "-std=c++17",
                 "-fdiagnostics-color=always",
                 "-g",
+                "-Wall",
                 "./aclc/src/*.cpp",
                 "-o",
                 "./aclc/test/aclc"
