@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <utility>
 
-#include "exceptions.hpp"
+#include "diagnoser.hpp"
 #include "import_handler.hpp"
 #include "invariant_types.hpp"
 #include "type_builder.hpp"
@@ -56,8 +56,19 @@ static void resolveSymbol0(List<resolve::SearchResult>& dest, Scope* scope,
 	if (allowExternal) {
 		if (GlobalScope* gs = dynamic_cast<GlobalScope*>(scope)) {
 			for (auto& i : gs->imports) {
-				resolveSymbol0(dest, i->referent->globalScope, id, false, false,
-							   targets);
+				if (i->targets.empty() &&
+					listContains(targets, SearchTarget::NAMESPACE) &&
+					id->data == i->actualAlias->data)
+					dest.push_back({i, scope, getResultOrigin(scope, i)});
+				for (auto& t : i->targets) {
+					for (auto& r : t->referents) {
+						if (r->id->data == id->data &&
+							listContains(targets, getSearchTarget(r)))
+							dest.push_back(
+								{r, i->referent->globalScope,
+								 getResultOrigin(i->referent->globalScope, r)});
+					}
+				}
 			}
 		}
 	}
@@ -81,25 +92,36 @@ void resolveSymbol(List<resolve::SearchResult>& dest, Scope* scope,
 				const_cast<bt::InvariantType*>(bt::resolveInvariantType(id));
 			dest.push_back({dynamic_cast<Symbol*>(s), dynamic_cast<Scope*>(s),
 							resolve::ResultOrigin::STATIC});
-		} catch (AclException& e) {
+		} catch (UnresolvedSymbolException& e) {
 		}
 	}
 }
 
 struct SymbolCandidateProblem {
-	int ec;
+	ec::ErrorCode ec;
 	SourceMeta location;
+	int highlightLen;
 };
 
-void diagnoseVisibility(List<SymbolCandidateProblem>& problems,
+bool diagnoseVisibility(Diagnoser& diagnoser,
 						const resolve::SearchResult& candidate,
 						const SearchCriteria& searchCriteria,
-						const SourceMeta& refererMeta,
-						const Scope* lexicalScope) {
-	SourceMeta visMeta = refererMeta;
-	auto visibility =
-		getSymbolVisibility(candidate.owningScope, candidate.symbol,
-							searchCriteria.modifiable, visMeta);
+						const Token* refererToken, const Scope* lexicalScope) {
+	const Token* vis = nullptr;
+	TokenType visibility = TokenType::EOF_TOKEN;
+	try {
+		visibility =
+			getSymbolVisibility(candidate.owningScope, candidate.symbol,
+								searchCriteria.modifiable, &vis);
+	} catch (AcceleException& e) {
+		if (e.sourceMeta)
+			diagnoser.diagnose(e.ec, *e.sourceMeta, e.highlightLength,
+							   e.message);
+		else
+			diagnoser.diagnose(e.ec, e.message);
+		return true;
+	}
+	SourceMeta visMeta = vis ? vis->meta : refererToken->meta;
 
 	if (visibility == TokenType::INTERNAL) {
 		// Assert owning modules match
@@ -107,22 +129,23 @@ void diagnoseVisibility(List<SymbolCandidateProblem>& problems,
 		const auto& lexicalGs = getGlobalScope(lexicalScope);
 
 		if (candidateGs != lexicalGs) {
-			problems.push_back({ACL_EC_SYMBOL_NOT_VISIBLE, refererMeta});
+			diagnoser.diagnoseSymbolNotVisible(refererToken->meta,
+											   candidate.symbol);
+			return true;
 		}
 	} else if (visibility == TokenType::PROTECTED) {
 		// "protected" can only be used on symbols which are declared in a type
 		const Type* candidateType =
 			dynamic_cast<const Type*>(candidate.owningScope);
 		if (!candidateType) {
-			// TODO: Print error here
-			problems.push_back({ACL_EC_INVALID_MODIFIER, visMeta});
-			return;
+			diagnoser.diagnose(ec::INVALID_MODIFIER, visMeta, 1);
+			return true;
 		}
 
 		// Assert both have same type in lexical scope hierarchy
 		const Scope* currentScope = lexicalScope;
 		while (currentScope) {
-			if (currentScope == candidate.owningScope) return;
+			if (currentScope == candidate.owningScope) return false;
 			currentScope = currentScope->parentScope;
 		}
 
@@ -142,7 +165,9 @@ void diagnoseVisibility(List<SymbolCandidateProblem>& problems,
 										 candidateType->sourceMeta);
 
 		if (!type || !type::canCastTo(typeRef, candidateTypeRef)) {
-			problems.push_back({ACL_EC_SYMBOL_NOT_VISIBLE, refererMeta});
+			diagnoser.diagnoseSymbolNotVisible(refererToken->meta,
+											   candidate.symbol);
+			return true;
 		}
 
 		delete typeRef;
@@ -152,153 +177,185 @@ void diagnoseVisibility(List<SymbolCandidateProblem>& problems,
 		// namespace
 		if (!dynamic_cast<const Type*>(candidate.owningScope) &&
 			!dynamic_cast<const Namespace*>(candidate.owningScope)) {
-			// TODO: Print error here
-			problems.push_back({ACL_EC_INVALID_MODIFIER, visMeta});
-			return;
+			diagnoser.diagnose(ec::INVALID_MODIFIER, visMeta, 1);
+			return true;
 		}
 
 		// Assert both have same scope in lexical scope hierarchy
 		const Scope* currentScope = lexicalScope;
 		while (currentScope) {
-			if (currentScope == candidate.owningScope) return;
+			if (currentScope == candidate.owningScope) return false;
 			currentScope = currentScope->parentScope;
 		}
 
-		problems.push_back({ACL_EC_SYMBOL_NOT_VISIBLE, refererMeta});
+		diagnoser.diagnoseSymbolNotVisible(refererToken->meta,
+										   candidate.symbol);
+		return true;
 	}
+
+	return false;
 }
 
-void diagnoseStaticness(List<SymbolCandidateProblem>& problems,
+bool diagnoseStaticness(Diagnoser& diagnoser,
 						const resolve::SearchResult& candidate,
-						const SourceMeta& refererMeta) {
+						const Token* refererToken) {
 	bool isStatic = isStaticSymbol(candidate.owningScope, candidate.symbol);
 	if (isStatic && candidate.origin == resolve::ResultOrigin::TYPE_HIERARCHY) {
-		problems.push_back({ACL_EC_STATIC_ACCESS_VIA_INSTANCE, refererMeta});
+		diagnoser.diagnoseStaticViaInstance(refererToken->meta,
+											candidate.symbol);
+		return true;
 	} else if (!isStatic && candidate.origin == resolve::ResultOrigin::STATIC) {
-		problems.push_back({ACL_EC_INSTANCE_ACCESS_VIA_STATIC, refererMeta});
+		diagnoser.diagnoseInstanceViaStatic(refererToken->meta,
+											candidate.symbol);
+		return true;
 	}
+	return false;
 }
 
-void diagnoseGenerics(List<SymbolCandidateProblem>& problems,
+bool diagnoseGenerics(Diagnoser& diagnoser,
 					  const resolve::SearchResult& candidate,
 					  const List<TypeRef*>& generics,
 					  const SearchCriteria& searchCriteria,
-					  const SourceMeta& refererMeta) {
+					  const Token* refererToken) {
 	if (const Namespace* n = dynamic_cast<const Namespace*>(candidate.symbol)) {
-		if (n->generics.size() < generics.size())
-			problems.push_back(
-				{ACL_EC_TOO_MANY_GENERICS, generics.back()->sourceMeta});
-		else if (n->generics.size() > generics.size())
-			problems.push_back({ACL_EC_INSUFFICIENT_GENERICS, refererMeta});
-		else {
+		if (n->generics.size() < generics.size()) {
+			diagnoser.diagnose(ec::TOO_MANY_GENERICS,
+							   generics.back()->sourceMeta, 1);
+			return true;
+		} else if (n->generics.size() > generics.size()) {
+			diagnoser.diagnose(ec::INSUFFICIENT_GENERICS, refererToken->meta,
+							   refererToken->data.length());
+			return true;
+		} else {
+			bool result = false;
 			for (int i = 0; i < generics.size(); i++) {
-				if (!type::genericAcceptsType(n->generics[i], generics[i]))
-					problems.push_back(
-						{ACL_EC_GENERICS_MISMATCH, generics[i]->sourceMeta});
+				if (!type::genericAcceptsType(n->generics[i], generics[i])) {
+					diagnoser.diagnose(ec::GENERICS_MISMATCH,
+									   generics[i]->sourceMeta, 1);
+					result = true;
+				}
 			}
+			if (result) return true;
 		}
 	} else if (const GenericType* g =
 				   dynamic_cast<const GenericType*>(candidate.symbol)) {
 		if (!generics.empty()) {
-			problems.push_back(
-				{ACL_EC_TOO_MANY_GENERICS, generics.back()->sourceMeta});
+			diagnoser.diagnose(ec::TOO_MANY_GENERICS,
+							   generics.back()->sourceMeta, 1);
+			return true;
 		}
 	} else if (const Type* n = dynamic_cast<const Type*>(candidate.symbol)) {
 		if (n->generics.size() < generics.size()) {
-			problems.push_back(
-				{ACL_EC_TOO_MANY_GENERICS, generics.back()->sourceMeta});
-			return;
+			diagnoser.diagnose(ec::TOO_MANY_GENERICS,
+							   generics.back()->sourceMeta, 1);
+			return true;
 		} else if (searchCriteria.requireExactMatch &&
 				   n->generics.size() > generics.size()) {
-			problems.push_back({ACL_EC_INSUFFICIENT_GENERICS, refererMeta});
+			diagnoser.diagnose(ec::INSUFFICIENT_GENERICS, refererToken->meta,
+							   refererToken->data.length());
+			return true;
 		}
+		bool result = false;
 		for (int i = 0; i < generics.size(); i++) {
-			if (!type::genericAcceptsType(n->generics[i], generics[i]))
-				problems.push_back(
-					{ACL_EC_GENERICS_MISMATCH, generics[i]->sourceMeta});
+			if (!type::genericAcceptsType(n->generics[i], generics[i])) {
+				diagnoser.diagnose(ec::GENERICS_MISMATCH,
+								   generics[i]->sourceMeta, 1);
+				result = true;
+			}
 		}
+		if (result) return true;
 	} else if (const Function* n =
 				   dynamic_cast<const Function*>(candidate.symbol)) {
-		if (n->generics.size() < generics.size())
-			problems.push_back(
-				{ACL_EC_TOO_MANY_GENERICS, generics.back()->sourceMeta});
-		for (int i = 0; i < generics.size(); i++) {
-			if (!type::genericAcceptsType(n->generics[i], generics[i]))
-				problems.push_back(
-					{ACL_EC_GENERICS_MISMATCH, generics[i]->sourceMeta});
+		if (n->generics.size() < generics.size()) {
+			diagnoser.diagnose(ec::TOO_MANY_GENERICS,
+							   generics.back()->sourceMeta, 1);
+			return true;
 		}
+		bool result = false;
+		for (int i = 0; i < generics.size(); i++) {
+			if (!type::genericAcceptsType(n->generics[i], generics[i])) {
+				diagnoser.diagnose(ec::GENERICS_MISMATCH,
+								   generics[i]->sourceMeta, 1);
+				result = true;
+			}
+		}
+		if (result) return true;
 	} else if (const Constructor* n =
 				   dynamic_cast<const Constructor*>(candidate.symbol)) {
 		const auto& targetGenerics =
 			dynamic_cast<const Type*>(n->parentScope)->generics;
 		if (targetGenerics.size() < generics.size()) {
-			problems.push_back(
-				{ACL_EC_TOO_MANY_GENERICS, generics.back()->sourceMeta});
-			return;
+			diagnoser.diagnose(ec::TOO_MANY_GENERICS,
+							   generics.back()->sourceMeta, 1);
+			return true;
 		} else if (searchCriteria.requireExactMatch &&
 				   targetGenerics.size() > generics.size()) {
-			problems.push_back({ACL_EC_INSUFFICIENT_GENERICS, refererMeta});
+			diagnoser.diagnose(ec::INSUFFICIENT_GENERICS, refererToken->meta,
+							   refererToken->data.length());
+			return true;
 		}
+		bool result = false;
 		for (int i = 0; i < generics.size(); i++) {
-			if (!type::genericAcceptsType(targetGenerics[i], generics[i]))
-				problems.push_back(
-					{ACL_EC_GENERICS_MISMATCH, generics[i]->sourceMeta});
+			if (!type::genericAcceptsType(targetGenerics[i], generics[i])) {
+				diagnoser.diagnose(ec::GENERICS_MISMATCH,
+								   generics[i]->sourceMeta, 1);
+				result = true;
+			}
 		}
+		if (result) return true;
 	} else if (!generics.empty()) {
-		problems.push_back(
-			{ACL_EC_TOO_MANY_GENERICS, generics.back()->sourceMeta});
+		diagnoser.diagnose(ec::TOO_MANY_GENERICS, generics.back()->sourceMeta,
+						   1);
+		return true;
 	}
+	return false;
 }
 
-void findSymbolCandidateProblems(const resolve::SearchResult& candidate,
+bool findSymbolCandidateProblems(const resolve::SearchResult& candidate,
 								 const List<TypeRef*>& generics,
 								 const SearchCriteria& searchCriteria,
-								 const SourceMeta& refererMeta,
+								 const Token* refererToken,
 								 const Scope* lexicalScope,
-								 List<SymbolCandidateProblem>& problems) {
-	diagnoseVisibility(problems, candidate, searchCriteria, refererMeta,
-					   lexicalScope);
-	diagnoseStaticness(problems, candidate, refererMeta);
-	diagnoseGenerics(problems, candidate, generics, searchCriteria,
-					 refererMeta);
+								 Diagnoser& diagnoser) {
+	auto d1 = diagnoseVisibility(diagnoser, candidate, searchCriteria,
+								 refererToken, lexicalScope);
+	auto d2 = diagnoseStaticness(diagnoser, candidate, refererToken);
+	auto d3 = diagnoseGenerics(diagnoser, candidate, generics, searchCriteria,
+							   refererToken);
+	return d1 || d2 || d3;
 }
 
 Symbol* getSymbolReferent(const List<resolve::SearchResult>& results,
 						  const List<TypeRef*>& generics,
 						  const SearchCriteria& searchCriteria,
-						  const SourceMeta& refererMeta,
-						  const Scope* lexicalScope) {
+						  const Token* refererToken, const Scope* lexicalScope,
+						  Diagnoser& diagnoser) {
 	if (results.empty()) {
-		throw AclException(ASP_CORE_UNKNOWN, refererMeta, "Unresolved symbol");
+		throw UnresolvedSymbolException(refererToken);
 	}
 
 	bool first = true;
 	List<SymbolCandidateProblem> initialCandidateProblems;
+	StringBuffer tmp;
+	Diagnoser* tmpDiag = new Diagnoser(diagnoser.ctx, tmp);
+	StringBuffer other;
 	for (auto& r : results) {
 		List<SymbolCandidateProblem> problems;
-		findSymbolCandidateProblems(r, generics, searchCriteria, refererMeta,
-									lexicalScope, problems);
+		findSymbolCandidateProblems(r, generics, searchCriteria, refererToken,
+									lexicalScope, *tmpDiag);
 
-		if (problems.empty())
-			return r.symbol;
-		else if (first) {
-			initialCandidateProblems.insert(initialCandidateProblems.end(),
-											problems.begin(), problems.end());
-		}
+		if (problems.empty()) return r.symbol;
 
 		first = false;
+		delete tmpDiag;
+		tmpDiag = new Diagnoser(diagnoser.ctx, other);
 	}
 
 	auto initialCandidate = results[0];
 
-	for (const auto& problem : initialCandidateProblems) {
-		StringBuffer sb;
-		sb << "Error " << problem.ec << " in module " << problem.location.file
-		   << " at line " << problem.location.line << ", col "
-		   << problem.location.col;
-		String s = sb.str();
-		log::warn(s);
-	}
+	String s = tmp.str();
+
+	std::cout << s;
 
 	return initialCandidate.symbol;
 }
@@ -328,11 +385,10 @@ int getRequiredArity(const List<TypeRef*>& expected, bool& variadicDest) {
 		int amt = 1;
 		if (SuffixTypeRef* s = dynamic_cast<SuffixTypeRef*>(t)) {
 			if (s->suffixSymbol->type == TokenType::TRIPLE_DOT &&
-				initialVarargsMeta)
-				throw AclException(
-					ASP_CORE_UNKNOWN, *initialVarargsMeta,
-					"A variadic parameter must be the final parameter");
-			else if (s->suffixSymbol->type == TokenType::TRIPLE_DOT) {
+				initialVarargsMeta) {
+				throw AcceleException(ec::NONFINAL_VARIADIC_PARAMETER,
+									  *initialVarargsMeta, 1, "");
+			} else if (s->suffixSymbol->type == TokenType::TRIPLE_DOT) {
 				initialVarargsMeta = &s->sourceMeta;
 				amt = 0;
 				variadicDest = true;
@@ -347,30 +403,30 @@ int getRequiredArity(const List<TypeRef*>& expected, bool& variadicDest) {
 
 void validateFunctionCallArgs(const List<TypeRef*>& expected,
 							  const List<TypeRef*>& actual,
-							  const SourceMeta& sourceMeta) {
+							  const SourceMeta& sourceMeta,
+							  Diagnoser& diagnoser) {
 	bool variadic = false;
 	int required = getRequiredArity(expected, variadic);
-	if (actual.size() < required)
-		throw AclException(
-			ASP_CORE_UNKNOWN, sourceMeta,
-			"Insufficient number of arguments for function call");
+	if (actual.size() < required) {
+		diagnoser.diagnose(ec::INSUFFICIENT_ARGUMENTS, sourceMeta, 1);
+		throw AcceleException();
+	}
 
-	// TODO: Replace immediate throwing when finding one error with one that
-	// shows all argument errors
 	for (int i = 0; i < actual.size(); i++) {
 		auto argType = actual[i];
-		if (i >= expected.size() && !variadic)
-			throw AclException(ASP_CORE_UNKNOWN, argType->sourceMeta,
-							   "Too many arguments for function call");
-		else if (i >= expected.size()) {
+		if (i >= expected.size() && !variadic) {
+			diagnoser.diagnose(ec::TOO_MANY_ARGUMENTS, argType->sourceMeta, 1);
+		} else if (i >= expected.size()) {
 			SuffixTypeRef* s =
 				dynamic_cast<SuffixTypeRef*>(expected[expected.size() - 1]);
-			if (!type::canCastTo(argType, s->type))
-				throw AclException(ASP_CORE_UNKNOWN, argType->sourceMeta,
-								   "Invalid argument for function call");
-		} else if (!type::canCastTo(argType, expected[i]))
-			throw AclException(ASP_CORE_UNKNOWN, argType->sourceMeta,
-							   "Invalid argument for function call");
+			if (!type::canCastTo(argType, s->type)) {
+				diagnoser.diagnose(ec::ARGUMENT_TYPE_MISMATCH,
+								   argType->sourceMeta, 1);
+			}
+		} else if (!type::canCastTo(argType, expected[i])) {
+			diagnoser.diagnose(ec::ARGUMENT_TYPE_MISMATCH, argType->sourceMeta,
+							   1);
+		}
 	}
 }
 
@@ -573,52 +629,71 @@ Scope* Resolver::getLexicalScope() {
 	return !lexicalScopes.empty() ? lexicalScopes.back() : peekScope();
 }
 
-Resolver::Resolver(CompilerContext& ctx, Ast* ast)
-	: ctx(ctx), ast(ast), maxStage(ResolutionStage::RESOLVED) {}
+Resolver::Resolver(CompilerContext& ctx, Module* mod)
+	: ctx(ctx),
+	  mod(mod),
+	  maxStage(ResolutionStage::RESOLVED),
+	  diagnoser(ctx, std::cout) {}
 
-Resolver::Resolver(CompilerContext& ctx, Ast* ast, ResolutionStage maxStage)
-	: ctx(ctx), ast(ast), maxStage(maxStage) {}
+Resolver::Resolver(CompilerContext& ctx, Module* mod, ResolutionStage maxStage)
+	: ctx(ctx), mod(mod), maxStage(maxStage), diagnoser(ctx, std::cout) {}
 
 void Resolver::resolve() {
-	ast->stage++;
-	do {
-		if (ast->stage == ResolutionStage::EXTERNAL_TYPES) {
-			ImportHandler ih = ImportHandler(ctx, ast);
-			ih.resolveImports();
-		}
+	mod->ast->stage++;
+	while (mod->ast->stage < maxStage) {
+		resolveGlobalScope();
+		mod->ast->stage++;
+	}
 
-		pushScope(ast->globalScope, true);
-		for (auto& c : ast->globalScope->content) {
-			resolveNonLocalContent(c);
-		}
-		popScope();
-		ast->stage++;
-	} while (ast->stage < maxStage);
+	resolveGlobalScope();
+}
+
+void Resolver::resolveGlobalScope() {
+	if (mod->ast->stage == ResolutionStage::EXTERNAL_TYPES) {
+		ImportHandler ih = ImportHandler(ctx, mod);
+		ih.resolveImports();
+	}
+
+	pushScope(mod->ast->globalScope, true);
+	for (auto& c : mod->ast->globalScope->content) {
+		resolveNonLocalContent(c);
+	}
+	popScope();
 }
 
 void Resolver::resolveNonLocalContent(Node* n) {
-	if (Class* c = dynamic_cast<Class*>(n))
-		resolveClass(c);
-	else if (Struct* c = dynamic_cast<Struct*>(n))
-		resolveStruct(c);
-	else if (Template* c = dynamic_cast<Template*>(n))
-		resolveTemplate(c);
-	else if (Enum* c = dynamic_cast<Enum*>(n))
-		resolveEnum(c);
-	else if (Namespace* c = dynamic_cast<Namespace*>(n))
-		resolveNamespace(c);
-	else if (Alias* c = dynamic_cast<Alias*>(n))
-		resolveAlias(c);
-	else if (Variable* c = dynamic_cast<Variable*>(n))
-		resolveVariable(c);
-	else if (EnumCase* c = dynamic_cast<EnumCase*>(n))
-		resolveEnumCase(c);
-	else if (Constructor* c = dynamic_cast<Constructor*>(n))
-		resolveConstructor(c);
-	else if (Function* c = dynamic_cast<Function*>(n))
-		resolveFunction(c);
-	else
-		throw "Unknown node";
+	try {
+		if (Class* c = dynamic_cast<Class*>(n))
+			resolveClass(c);
+		else if (Struct* c = dynamic_cast<Struct*>(n))
+			resolveStruct(c);
+		else if (Template* c = dynamic_cast<Template*>(n))
+			resolveTemplate(c);
+		else if (Enum* c = dynamic_cast<Enum*>(n))
+			resolveEnum(c);
+		else if (Namespace* c = dynamic_cast<Namespace*>(n))
+			resolveNamespace(c);
+		else if (Alias* c = dynamic_cast<Alias*>(n))
+			resolveAlias(c);
+		else if (Variable* c = dynamic_cast<Variable*>(n))
+			resolveVariable(c);
+		else if (EnumCase* c = dynamic_cast<EnumCase*>(n))
+			resolveEnumCase(c);
+		else if (Constructor* c = dynamic_cast<Constructor*>(n))
+			resolveConstructor(c);
+		else if (Function* c = dynamic_cast<Function*>(n))
+			resolveFunction(c);
+		else if (dynamic_cast<Import*>(n))
+			return;
+		else
+			throw "Unknown node";
+	} catch (UnresolvedSymbolException& e) {
+		if (mod->ast->stage == ResolutionStage::RESOLVED) {
+			diagnoser.diagnose(ec::UNRESOLVED_SYMBOL, e.id->meta,
+							   e.id->data.length());
+			throw e;
+		}
+	}
 }
 
 void Resolver::resolveClass(Class* n) {
@@ -675,8 +750,8 @@ void Resolver::resolveVariable(Variable* n) {
 		n->actualType = n->declaredType;
 	}
 
-	if (n->value && ast->stage != ResolutionStage::INTERNAL_TYPES &&
-		ast->stage != ResolutionStage::EXTERNAL_TYPES) {
+	if (n->value && mod->ast->stage != ResolutionStage::INTERNAL_TYPES &&
+		mod->ast->stage != ResolutionStage::EXTERNAL_TYPES) {
 		if (VariableBlock* vb = dynamic_cast<VariableBlock*>(n->value)) {
 			// TODO: Resolve variable block
 
@@ -696,8 +771,8 @@ void Resolver::resolveVariable(Variable* n) {
 }
 
 void Resolver::resolveEnumCase(EnumCase* n) {
-	if (ast->stage != ResolutionStage::INTERNAL_TYPES &&
-		ast->stage != ResolutionStage::EXTERNAL_TYPES) {
+	if (mod->ast->stage != ResolutionStage::INTERNAL_TYPES &&
+		mod->ast->stage != ResolutionStage::EXTERNAL_TYPES) {
 		for (auto& e : n->args) resolveExpression(e);
 		// TODO: Check to make sure the arguments are valid for the enum
 	}
@@ -707,8 +782,8 @@ void Resolver::resolveConstructor(Constructor* n) {
 	pushScope(n, true);
 	for (auto& p : n->parameters) resolveParameter(p, nullptr);
 
-	if (ast->stage != ResolutionStage::INTERNAL_TYPES &&
-		ast->stage != ResolutionStage::EXTERNAL_TYPES) {
+	if (mod->ast->stage != ResolutionStage::INTERNAL_TYPES &&
+		mod->ast->stage != ResolutionStage::EXTERNAL_TYPES) {
 		for (auto& c : n->content) resolveLocalContent(c, nullptr);
 	}
 	popScope();
@@ -729,8 +804,8 @@ void Resolver::resolveFunction(Function* n) {
 				const_cast<bt::InvariantType*>(bt::VOID), {}, n->sourceMeta);
 	}
 
-	if (ast->stage != ResolutionStage::INTERNAL_TYPES &&
-		ast->stage != ResolutionStage::EXTERNAL_TYPES) {
+	if (mod->ast->stage != ResolutionStage::INTERNAL_TYPES &&
+		mod->ast->stage != ResolutionStage::EXTERNAL_TYPES) {
 		try {
 			TypeRef* returnType = nullptr;
 			for (auto& c : n->content) resolveLocalContent(c, &returnType);
@@ -805,35 +880,41 @@ void Resolver::resolveParameter(Parameter* n, TypeRef* intendedType) {
 }
 
 void Resolver::resolveLocalContent(Node* n, TypeRef** destReturnType) {
-	if (Variable* e = dynamic_cast<Variable*>(n))
-		resolveVariable(e);
-	else if (FunctionBlock* e = dynamic_cast<FunctionBlock*>(n))
-		resolveFunctionBlock(e, destReturnType);
-	else if (IfBlock* e = dynamic_cast<IfBlock*>(n))
-		resolveIfBlock(e, destReturnType);
-	else if (WhileBlock* e = dynamic_cast<WhileBlock*>(n))
-		resolveWhileBlock(e, destReturnType);
-	else if (RepeatBlock* e = dynamic_cast<RepeatBlock*>(n))
-		resolveRepeatBlock(e, destReturnType);
-	else if (ForBlock* e = dynamic_cast<ForBlock*>(n))
-		resolveForBlock(e, destReturnType);
-	else if (SwitchBlock* e = dynamic_cast<SwitchBlock*>(n))
-		resolveSwitchBlock(e, destReturnType);
-	else if (TryBlock* e = dynamic_cast<TryBlock*>(n))
-		resolveTryBlock(e, destReturnType);
-	else if (Expression* e = dynamic_cast<Expression*>(n))
-		resolveExpression(e);
-	else if (Alias* e = dynamic_cast<Alias*>(n))
-		resolveAlias(e);
-	else if (ReturnStatement* e = dynamic_cast<ReturnStatement*>(n))
-		resolveReturnStatement(e, destReturnType);
-	else if (ThrowStatement* e = dynamic_cast<ThrowStatement*>(n))
-		resolveThrowStatement(e);
-	else if (dynamic_cast<SingleTokenStatement*>(n))
-		return;
-	else
-		throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
-						   "Unknown local content");
+	try {
+		if (Variable* e = dynamic_cast<Variable*>(n))
+			resolveVariable(e);
+		else if (FunctionBlock* e = dynamic_cast<FunctionBlock*>(n))
+			resolveFunctionBlock(e, destReturnType);
+		else if (IfBlock* e = dynamic_cast<IfBlock*>(n))
+			resolveIfBlock(e, destReturnType);
+		else if (WhileBlock* e = dynamic_cast<WhileBlock*>(n))
+			resolveWhileBlock(e, destReturnType);
+		else if (RepeatBlock* e = dynamic_cast<RepeatBlock*>(n))
+			resolveRepeatBlock(e, destReturnType);
+		else if (ForBlock* e = dynamic_cast<ForBlock*>(n))
+			resolveForBlock(e, destReturnType);
+		else if (SwitchBlock* e = dynamic_cast<SwitchBlock*>(n))
+			resolveSwitchBlock(e, destReturnType);
+		else if (TryBlock* e = dynamic_cast<TryBlock*>(n))
+			resolveTryBlock(e, destReturnType);
+		else if (Expression* e = dynamic_cast<Expression*>(n))
+			resolveExpression(e);
+		else if (Alias* e = dynamic_cast<Alias*>(n))
+			resolveAlias(e);
+		else if (ReturnStatement* e = dynamic_cast<ReturnStatement*>(n))
+			resolveReturnStatement(e, destReturnType);
+		else if (ThrowStatement* e = dynamic_cast<ThrowStatement*>(n))
+			resolveThrowStatement(e);
+		else if (dynamic_cast<SingleTokenStatement*>(n))
+			return;
+		else {
+			diagnoser.diagnose(ec::UNKNOWN, n->sourceMeta, 1,
+							   "Unknown local content");
+			throw AcceleException();
+		}
+	} catch (UnresolvedSymbolException& e) {
+		if (mod->ast->stage == ResolutionStage::RESOLVED) throw e;
+	}
 }
 
 void Resolver::resolveFunctionBlock(FunctionBlock* n,
@@ -852,8 +933,9 @@ void Resolver::resolveIfBlock(IfBlock* n, TypeRef** destReturnType) {
 	resolveExpression(n->condition);
 	if (!type::canCastTo(n->condition->valueType, boolRef)) {
 		delete boolRef;
-		throw AclException(ASP_CORE_UNKNOWN, n->condition->sourceMeta,
-						   "Expected Bool type");
+		diagnoser.diagnose(ec::ARGUMENT_TYPE_MISMATCH, n->condition->sourceMeta,
+						   1, "Expected Bool type for if-block condition");
+		throw AcceleException();
 	}
 
 	for (auto& c : n->block->content) resolveLocalContent(c, destReturnType);
@@ -865,8 +947,10 @@ void Resolver::resolveIfBlock(IfBlock* n, TypeRef** destReturnType) {
 		resolveExpression(elif->condition);
 		if (!type::canCastTo(elif->condition->valueType, boolRef)) {
 			delete boolRef;
-			throw AclException(ASP_CORE_UNKNOWN, elif->condition->sourceMeta,
-							   "Expected Bool type");
+			diagnoser.diagnose(ec::ARGUMENT_TYPE_MISMATCH,
+							   n->condition->sourceMeta, 1,
+							   "Expected Bool type for elif-block condition");
+			throw AcceleException();
 		}
 		for (auto& c : elif->block->content)
 			resolveLocalContent(c, destReturnType);
@@ -889,8 +973,9 @@ void Resolver::resolveWhileBlock(WhileBlock* n, TypeRef** destReturnType) {
 	resolveExpression(n->condition);
 	if (!type::canCastTo(n->condition->valueType, boolRef)) {
 		delete boolRef;
-		throw AclException(ASP_CORE_UNKNOWN, n->condition->sourceMeta,
-						   "Expected Bool type");
+		diagnoser.diagnose(ec::ARGUMENT_TYPE_MISMATCH, n->condition->sourceMeta,
+						   1, "Expected Bool type for while-block condition");
+		throw AcceleException();
 	}
 
 	for (auto& c : n->block->content) resolveLocalContent(c, destReturnType);
@@ -909,8 +994,9 @@ void Resolver::resolveRepeatBlock(RepeatBlock* n, TypeRef** destReturnType) {
 	resolveExpression(n->condition);
 	if (!type::canCastTo(n->condition->valueType, boolRef)) {
 		delete boolRef;
-		throw AclException(ASP_CORE_UNKNOWN, n->condition->sourceMeta,
-						   "Expected Bool type");
+		diagnoser.diagnose(ec::ARGUMENT_TYPE_MISMATCH, n->condition->sourceMeta,
+						   1, "Expected Bool type for repeat-block condition");
+		throw AcceleException();
 	}
 
 	for (auto& c : n->block->content) resolveLocalContent(c, destReturnType);
@@ -965,8 +1051,8 @@ void Resolver::resolveReturnStatement(ReturnStatement* n,
 				resolveExpression(n->value);
 				returnType = n->value->valueType;
 			} catch (RecursiveResolutionException& e) {
-				if (ast->stage != ResolutionStage::INTERNAL_ALL &&
-					ast->stage != ResolutionStage::RESOLVED)
+				if (mod->ast->stage != ResolutionStage::INTERNAL_ALL &&
+					mod->ast->stage != ResolutionStage::RESOLVED)
 					throw e;
 				if (Function* func = dynamic_cast<Function*>(f)) {
 					auto g = generateGenericType(
@@ -988,8 +1074,8 @@ void Resolver::resolveReturnStatement(ReturnStatement* n,
 	if (Function* func = dynamic_cast<Function*>(f)) {
 		if (func->declaredReturnType &&
 			!type::canCastTo(returnType, func->declaredReturnType)) {
-			throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
-							   "Invalid return statement");
+			diagnoser.diagnose(ec::INVALID_RETURN_STATEMENT, n->sourceMeta, 1);
+			throw AcceleException();
 		}
 	} else if (destReturnType) {
 		if (!*destReturnType)
@@ -997,9 +1083,10 @@ void Resolver::resolveReturnStatement(ReturnStatement* n,
 		else if (((*destReturnType)->actualType == bt::VOID ||
 				  returnType->actualType == bt::VOID) &&
 				 (*destReturnType)->actualType != returnType->actualType) {
-			throw AclException(
-				ASP_CORE_UNKNOWN, n->sourceMeta,
+			diagnoser.diagnose(
+				ec::INVALID_RETURN_STATEMENT, n->sourceMeta, 1,
 				"Cannot return void and non-void values in the same function");
+			throw AcceleException();
 		} else if (returnType->actualType != bt::VOID) {
 			*destReturnType = const_cast<TypeRef*>(
 				type::getMinCommonType(*destReturnType, returnType));
@@ -1031,8 +1118,10 @@ void Resolver::resolveTypeRef(TypeRef* n) {
 		resolveFunctionTypeRef(c);
 	else if (SuffixTypeRef* c = dynamic_cast<SuffixTypeRef*>(n))
 		resolveSuffixTypeRef(c);
-	else
-		throw "Unimplemented type ref";
+	else {
+		throw AcceleException(ec::UNKNOWN, n->sourceMeta, 1,
+							  "Unimplemented type ref");
+	}
 }
 
 void Resolver::resolveSimpleTypeRef(SimpleTypeRef* n) {
@@ -1043,16 +1132,17 @@ void Resolver::resolveSimpleTypeRef(SimpleTypeRef* n) {
 	if (n->parent) pushScope(resolveSimpleTypeRefParent(n->parent), false);
 	auto scope = peekScope();
 
-	SearchCriteria searchCriteria = {!n->parent,
-									 ast->stage > ResolutionStage::INTERNAL_ALL,
-									 {SearchTarget::TYPE},
-									 true,
-									 false};
+	SearchCriteria searchCriteria = {
+		!n->parent,
+		mod->ast->stage > ResolutionStage::INTERNAL_ALL,
+		{SearchTarget::TYPE},
+		true,
+		false};
 	List<resolve::SearchResult> results;
 	resolveSymbol(results, scope, n->id, searchCriteria.recursive,
 				  searchCriteria.allowExternal, searchCriteria.targets);
-	n->referent = getSymbolReferent(results, n->generics, searchCriteria,
-									n->sourceMeta, getLexicalScope());
+	n->referent = getSymbolReferent(results, n->generics, searchCriteria, n->id,
+									getLexicalScope(), diagnoser);
 
 	n->actualType = dynamic_cast<Type*>(n->referent);
 
@@ -1069,15 +1159,15 @@ Scope* Resolver::resolveSimpleTypeRefParent(SimpleTypeRef* n) {
 
 	SearchCriteria searchCriteria = {
 		!n->parent,
-		ast->stage > ResolutionStage::INTERNAL_ALL,
+		mod->ast->stage > ResolutionStage::INTERNAL_ALL,
 		{SearchTarget::TYPE, SearchTarget::NAMESPACE},
 		true,
 		false};
 	List<resolve::SearchResult> results;
 	resolveSymbol(results, scope, n->id, searchCriteria.recursive,
 				  searchCriteria.allowExternal, searchCriteria.targets);
-	n->referent = getSymbolReferent(results, n->generics, searchCriteria,
-									n->sourceMeta, getLexicalScope());
+	n->referent = getSymbolReferent(results, n->generics, searchCriteria, n->id,
+									getLexicalScope(), diagnoser);
 
 	if (n->parent) popScope();
 
@@ -1133,8 +1223,10 @@ void Resolver::resolveSuffixTypeRef(SuffixTypeRef* n) {
 		resolveTypeRef(n->type);
 		n->actualGenerics.push_back(n->type);
 		n->actualType = const_cast<bt::InvariantType*>(bt::ARRAY);
-	} else
-		throw "Unknown type ref suffix";
+	} else {
+		throw AcceleException(ec::UNKNOWN, n->sourceMeta, 1,
+							  "Unknown type ref suffix");
+	}
 }
 
 #pragma endregion
@@ -1185,7 +1277,7 @@ void Resolver::resolveFunctionCallExpression(
 	FunctionCallExpression* n, const SearchCriteria* searchCriteria) {
 	SearchCriteria actualCriteria = {
 		searchCriteria ? searchCriteria->recursive : true,
-		ast->stage > ResolutionStage::INTERNAL_ALL,
+		mod->ast->stage > ResolutionStage::INTERNAL_ALL,
 		{SearchTarget::VARIABLE, SearchTarget::TYPE},
 		false,
 		false};
@@ -1211,12 +1303,15 @@ void Resolver::resolveFunctionCallExpression(
 		// Require the caller expression to be a function expression
 		FunctionTypeRef* f =
 			dynamic_cast<FunctionTypeRef*>(n->caller->valueType);
-		if (!f)
-			throw AclException(ASP_CORE_UNKNOWN, n->caller->sourceMeta,
-							   "Invalid caller type for function call");
+		if (!f) {
+			diagnoser.diagnose(ec::INVALID_FUNCTION_CALLER,
+							   n->caller->sourceMeta, 1);
+			throw AcceleException();
+		}
 
 		// Make sure arguments are compatible
-		validateFunctionCallArgs(f->paramTypes, argTypes, n->sourceMeta);
+		validateFunctionCallArgs(f->paramTypes, argTypes, n->sourceMeta,
+								 diagnoser);
 
 		n->valueType = f->returnType;
 	}
@@ -1228,9 +1323,10 @@ void Resolver::resolveTernaryExpression(TernaryExpression* n) {
 		tb::base(const_cast<bt::InvariantType*>(bt::BOOL), {}, n->sourceMeta);
 	if (!type::canCastTo(n->arg0->valueType, boolRef)) {
 		delete boolRef;
-		throw AclException(
-			ASP_CORE_UNKNOWN, n->arg0->sourceMeta,
-			"Cannot cast condition argument of ternary expression to Bool");
+		diagnoser.diagnose(
+			ec::ARGUMENT_TYPE_MISMATCH, n->arg0->sourceMeta, 1,
+			"Expected Bool type for ternary expression condition");
+		throw AcceleException();
 	}
 
 	resolveExpression(n->arg1);
@@ -1264,7 +1360,7 @@ void Resolver::resolveAccessExpression(BinaryExpression* n,
 	if (n->op->type == TokenType::DOT) {
 		SearchCriteria leftCriteria = {
 			true,
-			ast->stage > ResolutionStage::INTERNAL_ALL,
+			mod->ast->stage > ResolutionStage::INTERNAL_ALL,
 			{SearchTarget::NAMESPACE, SearchTarget::VARIABLE,
 			 SearchTarget::TYPE},
 			true,
@@ -1283,7 +1379,10 @@ void Resolver::resolveAccessExpression(BinaryExpression* n,
 			actualTargets.push_back(SearchTarget::TYPE);
 		}
 		SearchCriteria actualCriteria = {
-			false, ast->stage > ResolutionStage::INTERNAL_ALL, actualTargets,
+			false,
+			mod->ast->stage > ResolutionStage::INTERNAL_ALL &&
+				getGlobalScope(peekScope()) == mod->ast->globalScope,
+			actualTargets,
 			searchCriteria ? searchCriteria->requireExactMatch : true,
 			searchCriteria ? searchCriteria->modifiable : false};
 		resolveExpression0(n->right, &actualCriteria, dest);
@@ -1296,10 +1395,13 @@ void Resolver::resolveAccessExpression(BinaryExpression* n,
 
 		SuffixTypeRef* s = dynamic_cast<SuffixTypeRef*>(n->left->valueType);
 		if (!s || s->suffixSymbol->type != TokenType::QUESTION_MARK ||
-			s->suffixSymbol->type != TokenType::EXCLAMATION_POINT)
-			throw AclException(ASP_CORE_UNKNOWN, n->left->sourceMeta,
-							   "Expected optional type for first argument to "
-							   "optional access expression");
+			s->suffixSymbol->type != TokenType::EXCLAMATION_POINT) {
+			diagnoser.diagnose(ec::ARGUMENT_TYPE_MISMATCH, n->left->sourceMeta,
+							   1,
+							   "Expected optional type for left-hand argument "
+							   "to optional access expression");
+			throw AcceleException();
+		}
 
 		pushScope(getScopeFromTypeRef(s->type), false);
 
@@ -1314,7 +1416,10 @@ void Resolver::resolveAccessExpression(BinaryExpression* n,
 			actualTargets.push_back(SearchTarget::TYPE);
 		}
 		SearchCriteria actualCriteria = {
-			false, ast->stage > ResolutionStage::INTERNAL_ALL, actualTargets,
+			false,
+			mod->ast->stage > ResolutionStage::INTERNAL_ALL &&
+				getGlobalScope(peekScope()) == mod->ast->globalScope,
+			actualTargets,
 			searchCriteria ? searchCriteria->requireExactMatch : true,
 			searchCriteria ? searchCriteria->modifiable : false};
 		resolveExpression0(n->right, &actualCriteria, dest);
@@ -1326,8 +1431,9 @@ void Resolver::resolveAccessExpression(BinaryExpression* n,
 		else
 			n->valueType = tb::unwrappedOptional(n->right->valueType);
 	} else {
-		throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
+		diagnoser.diagnose(ec::UNKNOWN, n->sourceMeta, 1,
 						   "Invalid access expression operator");
+		throw AcceleException();
 	}
 }
 
@@ -1361,19 +1467,19 @@ void Resolver::resolveIdentifierExpression(IdentifierExpression* n,
 
 	SearchCriteria actualCriteria = {
 		searchCriteria ? searchCriteria->recursive : true,
-		ast->stage > ResolutionStage::INTERNAL_ALL, actualTargets,
+		mod->ast->stage > ResolutionStage::INTERNAL_ALL, actualTargets,
 		searchCriteria ? searchCriteria->requireExactMatch : true,
 		searchCriteria ? searchCriteria->modifiable : false};
 
 	List<resolve::SearchResult> results;
 	resolveSymbol(results, peekScope(), n->value, actualCriteria.recursive,
 				  actualCriteria.allowExternal, actualCriteria.targets);
-	if (results.empty())
-		throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
-						   "Unresolved symbol");
+	if (results.empty()) {
+		throw UnresolvedSymbolException(n->value);
+	}
 	if (actualCriteria.requireExactMatch) {
 		n->referent = getSymbolReferent(results, n->generics, actualCriteria,
-										n->sourceMeta, getLexicalScope());
+										n->value, getLexicalScope(), diagnoser);
 		n->valueType = getSymbolReturnType(n->referent, n->sourceMeta);
 	} else
 		n->possibleReferents.insert(n->possibleReferents.end(), results.begin(),
@@ -1451,12 +1557,12 @@ void Resolver::resolveLiteralExpression(LiteralExpression* n) {
 			currentScope = currentScope->parentScope;
 
 		Type* t = dynamic_cast<Type*>(currentScope);
-		if (!t)
-			throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
-							   "Invalid location for \"self\"");
-		if (isStaticContext(peekScope()))
-			throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
+		if (!t || isStaticContext(peekScope())) {
+			diagnoser.diagnose(ec::STATIC_SELF, n->sourceMeta,
+							   n->value->data.length(),
 							   "Cannot reference \"self\" in a static context");
+			throw AcceleException();
+		}
 
 		List<TypeRef*> generics;
 		for (auto& g : t->generics) {
@@ -1470,13 +1576,12 @@ void Resolver::resolveLiteralExpression(LiteralExpression* n) {
 			currentScope = currentScope->parentScope;
 
 		Type* t = dynamic_cast<Type*>(currentScope);
-		if (!t)
-			throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
-							   "Invalid location for \"super\"");
-		if (isStaticContext(peekScope()))
-			throw AclException(
-				ASP_CORE_UNKNOWN, n->sourceMeta,
+		if (!t || isStaticContext(peekScope())) {
+			diagnoser.diagnose(
+				ec::STATIC_SUPER, n->sourceMeta, n->value->data.length(),
 				"Cannot reference \"super\" in a static context");
+			throw AcceleException();
+		}
 
 		List<TypeRef*> generics;
 		for (auto& g : t->generics) {
@@ -1484,9 +1589,11 @@ void Resolver::resolveLiteralExpression(LiteralExpression* n) {
 		}
 
 		n->valueType = new SuperTypeRef(n->sourceMeta, t);
-	} else
-		throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
+	} else {
+		diagnoser.diagnose(ec::UNKNOWN, n->sourceMeta, 1,
 						   "Unknown literal expression type");
+		throw AcceleException();
+	}
 }
 
 void Resolver::resolveLambdaExpression(LambdaExpression* n) {
@@ -1519,9 +1626,11 @@ void Resolver::resolveCastingExpression(CastingExpression* n) {
 		n->valueType = tb::optional(n->right);
 	} else if (n->op->type == TokenType::AS_UNWRAPPED) {
 		n->valueType = tb::unwrappedOptional(n->right);
-	} else
-		throw AclException(ASP_CORE_UNKNOWN, n->sourceMeta,
+	} else {
+		diagnoser.diagnose(ec::UNKNOWN, n->sourceMeta, 1,
 						   "Invalid casting operator");
+		throw AcceleException();
+	}
 }
 
 #pragma endregion
@@ -1531,10 +1640,13 @@ TypeRef* Resolver::getSymbolReturnType(Symbol* symbol,
 									   const SourceMeta& refererMeta) {
 	if (Variable* n = dynamic_cast<Variable*>(symbol)) {
 		if (!n->actualType) {
-			if (stackContainsSymbol(n))
-				throw AclException(
-					ASP_CORE_UNKNOWN, refererMeta,
-					"Cannot reference a variable before it is defined");
+			if (stackContainsSymbol(n)) {
+				diagnoser.diagnose(
+					ec::UNDEFINED_SYMBOL, refererMeta,
+					symbol->id->data.length(),
+					"Cannot reference a symbol before it is defined");
+				throw AcceleException();
+			}
 			resolveVariable(n);
 		}
 		return n->actualType;
@@ -1551,10 +1663,13 @@ TypeRef* Resolver::getSymbolReturnType(Symbol* symbol,
 		for (auto& p : n->parameters) paramTypes.push_back(p->actualType);
 		return tb::function(paramTypes, n->actualReturnType);
 	}
-	if (dynamic_cast<Type*>(symbol) || dynamic_cast<Namespace*>(symbol))
+	if (dynamic_cast<Type*>(symbol) || dynamic_cast<Namespace*>(symbol) ||
+		dynamic_cast<Import*>(symbol))
 		return nullptr;
-	throw AclException(ASP_CORE_UNKNOWN, symbol->sourceMeta,
+
+	diagnoser.diagnose(ec::UNKNOWN, symbol->sourceMeta, 1,
 					   "Cannot get return type for symbol");
+	throw AcceleException();
 }
 
 void Resolver::getFunctionCallCandidateType(
@@ -1574,9 +1689,10 @@ void Resolver::getFunctionCallCandidateType(
 		refs.push_back(std::make_pair(
 			symbol, tb::function(paramTypes, f->actualReturnType)));
 	} else if (EnumCase* e = dynamic_cast<EnumCase*>(symbol)) {
-		throw AclException(
-			ASP_CORE_UNKNOWN, symbol->sourceMeta,
+		diagnoser.diagnose(
+			ec::INVALID_FUNCTION_CALLER, callerMeta, symbol->id->data.length(),
 			"Enum cases cannot be the caller of a function call expression");
+		throw AcceleException();
 	} else if (Constructor* c = dynamic_cast<Constructor*>(symbol)) {
 		Type* owningType = dynamic_cast<Type*>(c->parentScope);
 		List<TypeRef*> paramTypes;
@@ -1586,9 +1702,11 @@ void Resolver::getFunctionCallCandidateType(
 													  symbol->sourceMeta))));
 	} else if (Type* t = dynamic_cast<Type*>(symbol)) {
 		return getFcctForType(t, refs, callerMeta);
-	} else
-		throw AclException(ASP_CORE_UNKNOWN, symbol->sourceMeta,
+	} else {
+		diagnoser.diagnose(ec::UNKNOWN, callerMeta, symbol->id->data.length(),
 						   "Unknown symbol");
+		throw AcceleException();
+	}
 }
 
 void Resolver::getFunctionCallCandidateTypes(
@@ -1624,30 +1742,16 @@ Symbol* Resolver::getBestCallerForArgs(IdentifierExpression* idexpr,
 		if (candidateScores[std::get<0>(e)][std::get<1>(e)].score == -1)
 			continue;
 		else {
-			// TODO: Validate caller here (for things like visibility,
-			// staticness, generics, etc.)
-			List<SymbolCandidateProblem> problems;
-			findSymbolCandidateProblems(
+			Token t = {TokenType::EOF_TOKEN, " ", callerMeta};
+			bool hasProblems = findSymbolCandidateProblems(
 				getFccSearchResult(
 					idexpr->possibleReferents[std::get<0>(e)],
 					std::get<0>(
 						candidateTypes[std::get<0>(e)][std::get<1>(e)])),
-				idexpr->generics, searchCriteria, callerMeta, lexicalScope,
-				problems);
+				idexpr->generics, searchCriteria, &t, lexicalScope, diagnoser);
 
-			if (!problems.empty()) {
-				for (const auto& problem : problems) {
-					StringBuffer sb;
-					sb << "Error " << problem.ec << " in module "
-					   << problem.location.file << " at line "
-					   << problem.location.line << ", col "
-					   << problem.location.col;
-					String s = sb.str();
-					log::warn(s);
-				}
-
-				throw AclException(ASP_CORE_UNKNOWN, callerMeta,
-								   "Unresolved symbol");
+			if (hasProblems) {
+				throw UnresolvedSymbolException(&t);
 			}
 
 			result =
@@ -1659,10 +1763,12 @@ Symbol* Resolver::getBestCallerForArgs(IdentifierExpression* idexpr,
 		}
 	}
 
-	if (!result)
-		throw AclException(ASP_CORE_UNKNOWN, callerMeta,
+	if (!result) {
+		diagnoser.diagnose(ec::INVALID_FUNCTION_CALLER, callerMeta, 1,
 						   "There are no candidate functions or function-like "
 						   "objects that accept the provided arguments");
+		throw AcceleException();
+	}
 
 	return result;
 }
@@ -1687,8 +1793,9 @@ void Resolver::getFcctForType(Type* type,
 			}
 		}
 	} else if (Template* n = dynamic_cast<Template*>(type)) {
-		throw AclException(ASP_CORE_UNKNOWN, type->sourceMeta,
+		diagnoser.diagnose(ec::TEMPLATE_CONSTRUCTOR, type->sourceMeta, 1,
 						   "Templates do not have constructors");
+		throw AcceleException();
 	} else if (Enum* n = dynamic_cast<Enum*>(type)) {
 		for (auto& s : n->symbols) {
 			if (Constructor* c = dynamic_cast<Constructor*>(s)) {
@@ -1700,8 +1807,10 @@ void Resolver::getFcctForType(Type* type,
 	} else if (Alias* n = dynamic_cast<Alias*>(type)) {
 		// TODO: Generics might need to be handled here somehow...
 		getFcctForType(n->value->actualType, refs, callerMeta);
-	} else
-		throw AclException(ASP_CORE_UNKNOWN, type->sourceMeta, "Unknown type");
+	} else {
+		diagnoser.diagnose(ec::UNKNOWN, type->sourceMeta, 1, "Unknown type");
+		throw AcceleException();
+	}
 }
 #pragma endregion
 }  // namespace acl

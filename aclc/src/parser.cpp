@@ -2,8 +2,6 @@
 
 #include <filesystem>
 
-#include "exceptions.hpp"
-
 namespace {
 constexpr int GLOBAL_FUNCTION_MODIFIERS_LEN = 10;
 const acl::TokenType GLOBAL_FUNCTION_MODIFIERS[GLOBAL_FUNCTION_MODIFIERS_LEN] =
@@ -391,16 +389,6 @@ const acl::TokenType SET_BLOCK_MODIFIERS[SET_BLOCK_MODIFIERS_LEN] = {
 constexpr int INIT_BLOCK_MODIFIERS_LEN = 2;
 const acl::TokenType INIT_BLOCK_MODIFIERS[INIT_BLOCK_MODIFIERS_LEN] = {
 	acl::TokenType::META_ENABLEWARNING, acl::TokenType::META_DISABLEWARNING};
-
-acl::String getModuleDir(const acl::String& path) {
-	auto p = std::filesystem::absolute(path);
-	return p.parent_path();
-}
-
-acl::String getModuleName(const acl::String& path) {
-	auto p = std::filesystem::absolute(path);
-	return p.stem();
-}
 }  // namespace
 
 namespace acl {
@@ -428,7 +416,10 @@ Token* Parser::lh(int pos) {
 
 Token* Parser::match(TokenType type) {
 	auto t = lh(0);
-	if (t->type != type) throw TokenMismatchException(type, t);
+	if (t->type != type) {
+		if (!isSpeculating()) diagnoser.diagnoseInvalidToken(type, t);
+		panic();
+	}
 	advance();
 	return t;
 }
@@ -484,6 +475,7 @@ void Parser::popMark(bool deleteQueuedTokens) {
 bool Parser::isSpeculating() { return !marks.empty(); }
 
 bool Parser::hasNext() {
+	sync(0);
 	return buffer[buffer.size() - 1]->type != TokenType::EOF_TOKEN;
 }
 
@@ -495,22 +487,27 @@ void Parser::sync(int pos) {
 
 void Parser::fill(int n) {
 	for (int i = 0; i < n; i++) {
-		buffer.push_back(lexer.nextToken());
+		try {
+			auto t = lexer.nextToken();
+			buffer.push_back(t);
+		} catch (LexerPanicException& e) {
+			panic();
+		}
 	}
 }
 
-void Parser::panic(PanicTerminator terminator) {
+[[noreturn]] void Parser::panic() {
 	List<TokenType> targetTypes;
-	getTypesForPanicTerminator(terminator, targetTypes);
+	getTypesForPanicTerminator(panicTerminator, targetTypes);
 	while (hasNext() && !listContains(targetTypes, lh(0)->type)) advance();
 	panicking = true;
-	panicTerminator = terminator;
-	didPanic = true;
+	if (!isSpeculating()) didPanic = true;
+	throw ParserPanicException();
 }
 
 Token* Parser::relex() {
 	List<Token*> newTokens;
-	Relexer(lh(0)).relex(newTokens);
+	Relexer(ctx, lh(0)).relex(newTokens);
 
 	if (newTokens.empty()) {
 		return lh(0);  // We couldn't relex it, so just return the current token
@@ -543,11 +540,14 @@ Parser::Parser(CompilerContext& ctx, Lexer&& lexer)
 	  current(0),
 	  currentScope(nullptr),
 	  panicking(false),
-	  didPanic(false) {}
+	  didPanic(false),
+	  diagnoser(ctx, std::cout) {}
 
 Parser::~Parser() {}
 
 Ast* Parser::parse() {
+	lexer.setRecoverySentinels({'\r', '\n', ';'});
+	panicTerminator = PanicTerminator::STATEMENT_END;
 	sync(0);  // Insert initial token into buffer
 
 	GlobalScope* globalScope = new GlobalScope(lh(0)->meta, {});
@@ -555,12 +555,10 @@ Ast* Parser::parse() {
 
 	skipNewlines(true);
 	while (hasNext()) {
+		lexer.setRecoverySentinels({'\r', '\n', ';'});
 		try {
 			auto content = parseGlobalContent();
-			if (Import* imp = dynamic_cast<Import*>(content)) {
-				globalScope->addImport(imp);
-			} else
-				globalScope->content.push_back(content);
+			globalScope->content.push_back(content);
 		} catch (ParserPanicException& e) {
 			panicking = false;
 
@@ -570,16 +568,16 @@ Ast* Parser::parse() {
 		skipNewlines(true);
 	}
 
-	if (didPanic)
-		throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta, "Parser errors");
+	if (didPanic) {
+		exit(1);
+	}
 
-	return new Ast(
-		globalScope,
-		ModuleInfo{getModuleDir(lexer.getModulePath()), lexer.getModulePath(),
-				   getModuleName(lexer.getModulePath())});
+	return new Ast(globalScope);
 }
 
 Node* Parser::parseGlobalContent() {
+	panicTerminator = PanicTerminator::STATEMENT_END;
+
 	try {
 		skipNewlines(true);
 
@@ -640,18 +638,33 @@ Node* Parser::parseGlobalContent() {
 			return parseSourceLock(
 				dynamic_cast<GlobalScope*>(currentScope)->content);
 		StringBuffer sb;
-		sb << "Invalid token [" << (int)t->type << "] in global scope";
-		String s = sb.str();
-		throw AclException(ASP_GLOBAL_SCOPE, t->meta, s);
-	} catch (AclException& e) {
-		String msg = e.what();
-		log::warn(msg);
-		panic(PanicTerminator::STATEMENT_END);
-
-		// This statement will never execute because panic() always throws.
-		// It's here to shut the compiler up.
-		return nullptr;
+		sb << "Unexpected token " << t->data << " in global scope";
+		if (!isSpeculating())
+			diagnoser.diagnose(ec::INVALID_TOKEN, t->meta, t->data.length(),
+							   sb.str());
+		panic();
+	} catch (DuplicateSymbolException& e) {
+		if (!isSpeculating())
+			diagnoser.diagnoseDuplicateSymbol(e.original, e.duplicate);
+		panic();
+	} catch (DuplicateImportException& e) {
+		if (!isSpeculating())
+			diagnoser.diagnoseDuplicateImport(e.original, e.duplicate);
+	} catch (ParserPanicException& e) {
+		panicTerminator = PanicTerminator::STATEMENT_END;
+		panic();
+	} catch (AcceleException& e) {
+		if (!isSpeculating()) {
+			if (e.sourceMeta)
+				diagnoser.diagnose(e.ec, *e.sourceMeta, e.highlightLength,
+								   e.message);
+			else
+				diagnoser.diagnose(e.ec, e.message);
+		}
+		panic();
 	}
+
+	panic();
 }
 
 Function* Parser::parseFunction(const TokenType* modifiersArray,
@@ -735,8 +748,10 @@ void Parser::parseModifiers(const TokenType* types, int typesLen,
 				break;
 			}
 		}
-		if (!foundModifier)
-			throw AclException(ASP_CORE_UNKNOWN, t->meta, "Invalid modifier");
+		if (!foundModifier) {
+			if (!isSpeculating()) diagnoser.diagnoseInvalidModifier(t);
+			panic();
+		}
 		skipNewlines();
 		t = lh(0);
 	}
@@ -763,15 +778,22 @@ void Parser::parseNewlineEquiv(bool greedy) {
 		while (greedy && lh(0)->type == TokenType::NL ||
 			   lh(0)->type == TokenType::SEMICOLON)
 			advanceAndDelete();
-	} else if (!isNewlineEquivalent(t->type))
-		throw AclException(ASP_LINE_TERMINATION, t->meta,
-						   "Expected newline or newline-equivalent token");
+	} else if (!isNewlineEquivalent(t->type)) {
+		if (!isSpeculating())
+			diagnoser.diagnoseInvalidToken(
+				"newline or newline-equivalent token", t);
+		panic();
+	}
 }
 
-void Parser::skipNewlines(bool includeSemicolons) {
+int Parser::skipNewlines(bool includeSemicolons) {
+	int result = 0;
 	while (lh(0)->type == TokenType::NL ||
-		   (includeSemicolons && lh(0)->type == TokenType::SEMICOLON))
+		   (includeSemicolons && lh(0)->type == TokenType::SEMICOLON)) {
 		advanceAndDelete();
+		result++;
+	}
+	return result;
 }
 
 #pragma region TypeRef
@@ -853,8 +875,11 @@ TypeRef* Parser::parseTypeSuffix(TypeRef* base) {
 		advance();
 		return new SuffixTypeRef(actualSuffix->meta, base, actualSuffix);
 	}
-	throw AclException(ASP_CORE_UNKNOWN, t->meta,
-					   "Invalid type reference suffix");
+
+	if (!isSpeculating())
+		diagnoser.diagnose(ec::UNKNOWN, t->meta, t->data.length(),
+						   "Invalid type reference suffix");
+	panic();
 }
 
 FunctionTypeRef* Parser::parseFunctionTypeRef(TypeRef* parameters) {
@@ -910,7 +935,7 @@ Expression* Parser::parseL2Expression() {
 		auto result = parseLambdaExpression();
 		popMark(true);
 		return result;
-	} catch (AclException& e) {
+	} catch (AcceleException& e) {
 		resetToMark();
 		return parseTernaryExpression();
 	}
@@ -1223,7 +1248,7 @@ Expression* Parser::parseIdentifierExpression() {
 		try {
 			parseGenericImpl(generics);
 			popMark();
-		} catch (AclException& e) {
+		} catch (AcceleException& e) {
 			resetToMark();
 		}
 	}
@@ -1577,229 +1602,321 @@ Namespace* Parser::parseNamespace(const TokenType* modifiersArray,
 }
 
 void Parser::parseClassContent(List<Node*>& dest) {
+	lexer.setRecoverySentinels({'}', '\r', '\n', ';'});
 	skipNewlines(true);
 	while (lh(0)->type != TokenType::RBRACE) {
-		auto t = lh(0);
-		int current = 0;
-		while (isModifier(t->type) || t->type == TokenType::NL) {
-			if (t->type == TokenType::META_ENABLEWARNING ||
-				t->type == TokenType::META_DISABLEWARNING) {
-				// 3 for keyword, lparen, and initial string literal
-				current += 3;
+		try {
+			auto t = lh(0);
+			int current = 0;
+			while (isModifier(t->type) || t->type == TokenType::NL) {
+				if (t->type == TokenType::META_ENABLEWARNING ||
+					t->type == TokenType::META_DISABLEWARNING) {
+					// 3 for keyword, lparen, and initial string literal
+					current += 3;
 
-				// 2 for comma and next string literal
-				while (lh(current)->type == TokenType::COMMA) current += 2;
+					// 2 for comma and next string literal
+					while (lh(current)->type == TokenType::COMMA) current += 2;
 
-				t = lh(++current);
-			} else
-				t = lh(++current);
+					t = lh(++current);
+				} else
+					t = lh(++current);
+			}
+
+			if (t->type == TokenType::VAR) {
+				dest.push_back(parseClassVariable());
+			} else if (t->type == TokenType::CONST) {
+				dest.push_back(parseClassConstant());
+			} else if (t->type == TokenType::ALIAS) {
+				dest.push_back(parseAlias(CLASS_ALIAS_MODIFIERS,
+										  CLASS_ALIAS_MODIFIERS_LEN));
+			} else if (t->type == TokenType::CLASS) {
+				dest.push_back(parseClass(CLASS_CLASS_MODIFIERS,
+										  CLASS_CLASS_MODIFIERS_LEN));
+			} else if (t->type == TokenType::STRUCT) {
+				dest.push_back(parseStruct(CLASS_STRUCT_MODIFIERS,
+										   CLASS_STRUCT_MODIFIERS_LEN));
+			} else if (t->type == TokenType::TEMPLATE) {
+				dest.push_back(parseTemplate(CLASS_TEMPLATE_MODIFIERS,
+											 CLASS_TEMPLATE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::ENUM) {
+				dest.push_back(
+					parseEnum(CLASS_ENUM_MODIFIERS, CLASS_ENUM_MODIFIERS_LEN));
+			} else if (t->type == TokenType::NAMESPACE) {
+				dest.push_back(parseNamespace(CLASS_NAMESPACE_MODIFIERS,
+											  CLASS_NAMESPACE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::FUN) {
+				dest.push_back(parseFunction(CLASS_FUNCTION_MODIFIERS,
+											 CLASS_FUNCTION_MODIFIERS_LEN,
+											 true));
+			} else if (t->type == TokenType::CONSTRUCT) {
+				dest.push_back(parseConstructor());
+			} else if (t->type == TokenType::DESTRUCT) {
+				dest.push_back(parseDestructor());
+			} else {
+				if (!isSpeculating())
+					diagnoser.diagnoseInvalidTokenWithMessage(
+						"Invalid class content", t);
+				panic();
+			}
+		} catch (DuplicateSymbolException& e) {
+			if (!isSpeculating())
+				diagnoser.diagnoseDuplicateSymbol(e.original, e.duplicate);
+			panic();
+		} catch (DuplicateImportException& e) {
+			if (!isSpeculating())
+				diagnoser.diagnoseDuplicateImport(e.original, e.duplicate);
+		} catch (ParserPanicException& e) {
+			panicking = false;
+		} catch (AcceleException& e) {
+			if (!isSpeculating()) {
+				if (e.sourceMeta)
+					diagnoser.diagnose(e.ec, *e.sourceMeta, e.highlightLength,
+									   e.message);
+				else
+					diagnoser.diagnose(e.ec, e.message);
+			}
+			panic();
 		}
-
-		if (t->type == TokenType::VAR) {
-			dest.push_back(parseClassVariable());
-		} else if (t->type == TokenType::CONST) {
-			dest.push_back(parseClassConstant());
-		} else if (t->type == TokenType::ALIAS) {
-			dest.push_back(
-				parseAlias(CLASS_ALIAS_MODIFIERS, CLASS_ALIAS_MODIFIERS_LEN));
-		} else if (t->type == TokenType::CLASS) {
-			dest.push_back(
-				parseClass(CLASS_CLASS_MODIFIERS, CLASS_CLASS_MODIFIERS_LEN));
-		} else if (t->type == TokenType::STRUCT) {
-			dest.push_back(parseStruct(CLASS_STRUCT_MODIFIERS,
-									   CLASS_STRUCT_MODIFIERS_LEN));
-		} else if (t->type == TokenType::TEMPLATE) {
-			dest.push_back(parseTemplate(CLASS_TEMPLATE_MODIFIERS,
-										 CLASS_TEMPLATE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::ENUM) {
-			dest.push_back(
-				parseEnum(CLASS_ENUM_MODIFIERS, CLASS_ENUM_MODIFIERS_LEN));
-		} else if (t->type == TokenType::NAMESPACE) {
-			dest.push_back(parseNamespace(CLASS_NAMESPACE_MODIFIERS,
-										  CLASS_NAMESPACE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::FUN) {
-			dest.push_back(parseFunction(CLASS_FUNCTION_MODIFIERS,
-										 CLASS_FUNCTION_MODIFIERS_LEN, true));
-		} else if (t->type == TokenType::CONSTRUCT) {
-			dest.push_back(parseConstructor());
-		} else if (t->type == TokenType::DESTRUCT) {
-			dest.push_back(parseDestructor());
-		} else {
-			throw AclException(ASP_CORE_UNKNOWN, t->meta,
-							   "Invalid struct content");
-		}
-
 		skipNewlines(true);
 	}
 }
 
 void Parser::parseTemplateContent(List<Node*>& dest) {
+	lexer.setRecoverySentinels({'}', '\r', '\n', ';'});
 	skipNewlines(true);
 	while (lh(0)->type != TokenType::RBRACE) {
-		auto t = lh(0);
-		int current = 0;
-		while (isModifier(t->type) || t->type == TokenType::NL) {
-			if (t->type == TokenType::META_ENABLEWARNING ||
-				t->type == TokenType::META_DISABLEWARNING) {
-				// 3 for keyword, lparen, and initial string literal
-				current += 3;
+		try {
+			auto t = lh(0);
+			int current = 0;
+			while (isModifier(t->type) || t->type == TokenType::NL) {
+				if (t->type == TokenType::META_ENABLEWARNING ||
+					t->type == TokenType::META_DISABLEWARNING) {
+					// 3 for keyword, lparen, and initial string literal
+					current += 3;
 
-				// 2 for comma and next string literal
-				while (lh(current)->type == TokenType::COMMA) current += 2;
+					// 2 for comma and next string literal
+					while (lh(current)->type == TokenType::COMMA) current += 2;
 
-				t = lh(++current);
-			} else
-				t = lh(++current);
+					t = lh(++current);
+				} else
+					t = lh(++current);
+			}
+
+			if (t->type == TokenType::VAR) {
+				dest.push_back(parseTemplateVariable());
+			} else if (t->type == TokenType::CONST) {
+				dest.push_back(parseTemplateConstant());
+			} else if (t->type == TokenType::ALIAS) {
+				dest.push_back(parseAlias(CLASS_ALIAS_MODIFIERS,
+										  CLASS_ALIAS_MODIFIERS_LEN));
+			} else if (t->type == TokenType::CLASS) {
+				dest.push_back(parseClass(CLASS_CLASS_MODIFIERS,
+										  CLASS_CLASS_MODIFIERS_LEN));
+			} else if (t->type == TokenType::STRUCT) {
+				dest.push_back(parseStruct(CLASS_STRUCT_MODIFIERS,
+										   CLASS_STRUCT_MODIFIERS_LEN));
+			} else if (t->type == TokenType::TEMPLATE) {
+				dest.push_back(parseTemplate(CLASS_TEMPLATE_MODIFIERS,
+											 CLASS_TEMPLATE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::ENUM) {
+				dest.push_back(
+					parseEnum(CLASS_ENUM_MODIFIERS, CLASS_ENUM_MODIFIERS_LEN));
+			} else if (t->type == TokenType::NAMESPACE) {
+				dest.push_back(parseNamespace(CLASS_NAMESPACE_MODIFIERS,
+											  CLASS_NAMESPACE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::FUN) {
+				dest.push_back(parseFunction(TEMPLATE_FUNCTION_MODIFIERS,
+											 TEMPLATE_FUNCTION_MODIFIERS_LEN,
+											 true));
+			} else {
+				if (!isSpeculating())
+					diagnoser.diagnoseInvalidTokenWithMessage(
+						"Invalid template content", t);
+				panic();
+			}
+		} catch (DuplicateSymbolException& e) {
+			if (!isSpeculating())
+				diagnoser.diagnoseDuplicateSymbol(e.original, e.duplicate);
+			panic();
+		} catch (DuplicateImportException& e) {
+			if (!isSpeculating())
+				diagnoser.diagnoseDuplicateImport(e.original, e.duplicate);
+		} catch (ParserPanicException& e) {
+			panicking = false;
+		} catch (AcceleException& e) {
+			if (!isSpeculating()) {
+				if (e.sourceMeta)
+					diagnoser.diagnose(e.ec, *e.sourceMeta, e.highlightLength,
+									   e.message);
+				else
+					diagnoser.diagnose(e.ec, e.message);
+			}
+			panic();
 		}
-
-		if (t->type == TokenType::VAR) {
-			dest.push_back(parseTemplateVariable());
-		} else if (t->type == TokenType::CONST) {
-			dest.push_back(parseTemplateConstant());
-		} else if (t->type == TokenType::ALIAS) {
-			dest.push_back(
-				parseAlias(CLASS_ALIAS_MODIFIERS, CLASS_ALIAS_MODIFIERS_LEN));
-		} else if (t->type == TokenType::CLASS) {
-			dest.push_back(
-				parseClass(CLASS_CLASS_MODIFIERS, CLASS_CLASS_MODIFIERS_LEN));
-		} else if (t->type == TokenType::STRUCT) {
-			dest.push_back(parseStruct(CLASS_STRUCT_MODIFIERS,
-									   CLASS_STRUCT_MODIFIERS_LEN));
-		} else if (t->type == TokenType::TEMPLATE) {
-			dest.push_back(parseTemplate(CLASS_TEMPLATE_MODIFIERS,
-										 CLASS_TEMPLATE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::ENUM) {
-			dest.push_back(
-				parseEnum(CLASS_ENUM_MODIFIERS, CLASS_ENUM_MODIFIERS_LEN));
-		} else if (t->type == TokenType::NAMESPACE) {
-			dest.push_back(parseNamespace(CLASS_NAMESPACE_MODIFIERS,
-										  CLASS_NAMESPACE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::FUN) {
-			dest.push_back(parseFunction(TEMPLATE_FUNCTION_MODIFIERS,
-										 TEMPLATE_FUNCTION_MODIFIERS_LEN,
-										 true));
-		} else {
-			throw AclException(ASP_CORE_UNKNOWN, t->meta,
-							   "Invalid template content");
-		}
-
 		skipNewlines(true);
 	}
 }
 
 void Parser::parseEnumContent(List<Node*>& dest) {
+	lexer.setRecoverySentinels({'}', '\r', '\n', ';'});
 	skipNewlines(true);
 	while (lh(0)->type != TokenType::RBRACE) {
-		auto t = lh(0);
-		int current = 0;
-		while (isModifier(t->type) || t->type == TokenType::NL) {
-			if (t->type == TokenType::META_ENABLEWARNING ||
-				t->type == TokenType::META_DISABLEWARNING) {
-				// 3 for keyword, lparen, and initial string literal
-				current += 3;
+		try {
+			auto t = lh(0);
+			int current = 0;
+			while (isModifier(t->type) || t->type == TokenType::NL) {
+				if (t->type == TokenType::META_ENABLEWARNING ||
+					t->type == TokenType::META_DISABLEWARNING) {
+					// 3 for keyword, lparen, and initial string literal
+					current += 3;
 
-				// 2 for comma and next string literal
-				while (lh(current)->type == TokenType::COMMA) current += 2;
+					// 2 for comma and next string literal
+					while (lh(current)->type == TokenType::COMMA) current += 2;
 
-				t = lh(++current);
-			} else
-				t = lh(++current);
+					t = lh(++current);
+				} else
+					t = lh(++current);
+			}
+
+			if (t->type == TokenType::VAR) {
+				dest.push_back(parseClassVariable());
+			} else if (t->type == TokenType::CONST) {
+				dest.push_back(parseClassConstant());
+			} else if (t->type == TokenType::ALIAS) {
+				dest.push_back(parseAlias(NAMESPACE_ALIAS_MODIFIERS,
+										  NAMESPACE_ALIAS_MODIFIERS_LEN));
+			} else if (t->type == TokenType::CLASS) {
+				dest.push_back(parseClass(NAMESPACE_CLASS_MODIFIERS,
+										  NAMESPACE_CLASS_MODIFIERS_LEN));
+			} else if (t->type == TokenType::STRUCT) {
+				dest.push_back(parseStruct(NAMESPACE_STRUCT_MODIFIERS,
+										   NAMESPACE_STRUCT_MODIFIERS_LEN));
+			} else if (t->type == TokenType::TEMPLATE) {
+				dest.push_back(parseTemplate(NAMESPACE_TEMPLATE_MODIFIERS,
+											 NAMESPACE_TEMPLATE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::ENUM) {
+				dest.push_back(parseEnum(NAMESPACE_ENUM_MODIFIERS,
+										 NAMESPACE_ENUM_MODIFIERS_LEN));
+			} else if (t->type == TokenType::NAMESPACE) {
+				dest.push_back(
+					parseNamespace(NAMESPACE_NAMESPACE_MODIFIERS,
+								   NAMESPACE_NAMESPACE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::FUN) {
+				dest.push_back(parseFunction(ENUM_FUNCTION_MODIFIERS,
+											 ENUM_FUNCTION_MODIFIERS_LEN,
+											 true));
+			} else if (t->type == TokenType::CONSTRUCT) {
+				dest.push_back(parseConstructor());
+			} else if (t->type == TokenType::DESTRUCT) {
+				dest.push_back(parseDestructor());
+			} else if (t->type == TokenType::CASE) {
+				dest.push_back(parseEnumCase());
+			} else {
+				if (!isSpeculating())
+					diagnoser.diagnoseInvalidTokenWithMessage(
+						"Invalid enum content", t);
+				panic();
+			}
+		} catch (DuplicateSymbolException& e) {
+			if (!isSpeculating())
+				diagnoser.diagnoseDuplicateSymbol(e.original, e.duplicate);
+			panic();
+		} catch (DuplicateImportException& e) {
+			if (!isSpeculating())
+				diagnoser.diagnoseDuplicateImport(e.original, e.duplicate);
+		} catch (ParserPanicException& e) {
+			panicking = false;
+		} catch (AcceleException& e) {
+			if (!isSpeculating()) {
+				if (e.sourceMeta)
+					diagnoser.diagnose(e.ec, *e.sourceMeta, e.highlightLength,
+									   e.message);
+				else
+					diagnoser.diagnose(e.ec, e.message);
+			}
+			panic();
 		}
-
-		if (t->type == TokenType::VAR) {
-			dest.push_back(parseClassVariable());
-		} else if (t->type == TokenType::CONST) {
-			dest.push_back(parseClassConstant());
-		} else if (t->type == TokenType::ALIAS) {
-			dest.push_back(parseAlias(NAMESPACE_ALIAS_MODIFIERS,
-									  NAMESPACE_ALIAS_MODIFIERS_LEN));
-		} else if (t->type == TokenType::CLASS) {
-			dest.push_back(parseClass(NAMESPACE_CLASS_MODIFIERS,
-									  NAMESPACE_CLASS_MODIFIERS_LEN));
-		} else if (t->type == TokenType::STRUCT) {
-			dest.push_back(parseStruct(NAMESPACE_STRUCT_MODIFIERS,
-									   NAMESPACE_STRUCT_MODIFIERS_LEN));
-		} else if (t->type == TokenType::TEMPLATE) {
-			dest.push_back(parseTemplate(NAMESPACE_TEMPLATE_MODIFIERS,
-										 NAMESPACE_TEMPLATE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::ENUM) {
-			dest.push_back(parseEnum(NAMESPACE_ENUM_MODIFIERS,
-									 NAMESPACE_ENUM_MODIFIERS_LEN));
-		} else if (t->type == TokenType::NAMESPACE) {
-			dest.push_back(parseNamespace(NAMESPACE_NAMESPACE_MODIFIERS,
-										  NAMESPACE_NAMESPACE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::FUN) {
-			dest.push_back(parseFunction(ENUM_FUNCTION_MODIFIERS,
-										 ENUM_FUNCTION_MODIFIERS_LEN, true));
-		} else if (t->type == TokenType::CONSTRUCT) {
-			dest.push_back(parseConstructor());
-		} else if (t->type == TokenType::DESTRUCT) {
-			dest.push_back(parseDestructor());
-		} else if (t->type == TokenType::CASE) {
-			dest.push_back(parseEnumCase());
-		} else {
-			throw AclException(ASP_CORE_UNKNOWN, t->meta,
-							   "Invalid enum content");
-		}
-
 		skipNewlines(true);
 	}
 }
 
 void Parser::parseNamespaceContent(List<Node*>& dest) {
+	lexer.setRecoverySentinels({'}', '\r', '\n', ';'});
 	skipNewlines(true);
 	while (lh(0)->type != TokenType::RBRACE) {
-		auto t = lh(0);
-		int current = 0;
-		while (isModifier(t->type) || t->type == TokenType::NL) {
-			if (t->type == TokenType::META_ENABLEWARNING ||
-				t->type == TokenType::META_DISABLEWARNING) {
-				// 3 for keyword, lparen, and initial string literal
-				current += 3;
+		try {
+			auto t = lh(0);
+			int current = 0;
+			while (isModifier(t->type) || t->type == TokenType::NL) {
+				if (t->type == TokenType::META_ENABLEWARNING ||
+					t->type == TokenType::META_DISABLEWARNING) {
+					// 3 for keyword, lparen, and initial string literal
+					current += 3;
 
-				// 2 for comma and next string literal
-				while (lh(current)->type == TokenType::COMMA) current += 2;
+					// 2 for comma and next string literal
+					while (lh(current)->type == TokenType::COMMA) current += 2;
 
-				t = lh(++current);
-			} else
-				t = lh(++current);
+					t = lh(++current);
+				} else
+					t = lh(++current);
+			}
+
+			if (t->type == TokenType::VAR) {
+				dest.push_back(
+					parseNonClassVariable(NAMESPACE_VARIABLE_MODIFIERS,
+										  NAMESPACE_VARIABLE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::CONST) {
+				dest.push_back(
+					parseNonClassConstant(NAMESPACE_VARIABLE_MODIFIERS,
+										  NAMESPACE_VARIABLE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::ALIAS) {
+				dest.push_back(parseAlias(NAMESPACE_ALIAS_MODIFIERS,
+										  NAMESPACE_ALIAS_MODIFIERS_LEN));
+			} else if (t->type == TokenType::CLASS) {
+				dest.push_back(parseClass(NAMESPACE_CLASS_MODIFIERS,
+										  NAMESPACE_CLASS_MODIFIERS_LEN));
+			} else if (t->type == TokenType::STRUCT) {
+				dest.push_back(parseStruct(NAMESPACE_STRUCT_MODIFIERS,
+										   NAMESPACE_STRUCT_MODIFIERS_LEN));
+			} else if (t->type == TokenType::TEMPLATE) {
+				dest.push_back(parseTemplate(NAMESPACE_TEMPLATE_MODIFIERS,
+											 NAMESPACE_TEMPLATE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::ENUM) {
+				dest.push_back(parseEnum(NAMESPACE_TEMPLATE_MODIFIERS,
+										 NAMESPACE_ENUM_MODIFIERS_LEN));
+			} else if (t->type == TokenType::NAMESPACE) {
+				dest.push_back(
+					parseNamespace(NAMESPACE_NAMESPACE_MODIFIERS,
+								   NAMESPACE_NAMESPACE_MODIFIERS_LEN));
+			} else if (t->type == TokenType::FUN) {
+				dest.push_back(parseFunction(NAMESPACE_FUNCTION_MODIFIERS,
+											 NAMESPACE_FUNCTION_MODIFIERS_LEN,
+											 false));
+			} else {
+				if (!isSpeculating())
+					diagnoser.diagnoseInvalidTokenWithMessage(
+						"Invalid namespace content", t);
+				panic();
+			}
+		} catch (DuplicateSymbolException& e) {
+			if (!isSpeculating())
+				diagnoser.diagnoseDuplicateSymbol(e.original, e.duplicate);
+			panic();
+		} catch (DuplicateImportException& e) {
+			if (!isSpeculating())
+				diagnoser.diagnoseDuplicateImport(e.original, e.duplicate);
+		} catch (ParserPanicException& e) {
+			panicking = false;
+		} catch (AcceleException& e) {
+			if (!isSpeculating()) {
+				if (e.sourceMeta)
+					diagnoser.diagnose(e.ec, *e.sourceMeta, e.highlightLength,
+									   e.message);
+				else
+					diagnoser.diagnose(e.ec, e.message);
+			}
+			panic();
 		}
-
-		if (t->type == TokenType::VAR) {
-			dest.push_back(
-				parseNonClassVariable(NAMESPACE_VARIABLE_MODIFIERS,
-									  NAMESPACE_VARIABLE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::CONST) {
-			dest.push_back(
-				parseNonClassConstant(NAMESPACE_VARIABLE_MODIFIERS,
-									  NAMESPACE_VARIABLE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::ALIAS) {
-			dest.push_back(parseAlias(NAMESPACE_ALIAS_MODIFIERS,
-									  NAMESPACE_ALIAS_MODIFIERS_LEN));
-		} else if (t->type == TokenType::CLASS) {
-			dest.push_back(parseClass(NAMESPACE_CLASS_MODIFIERS,
-									  NAMESPACE_CLASS_MODIFIERS_LEN));
-		} else if (t->type == TokenType::STRUCT) {
-			dest.push_back(parseStruct(NAMESPACE_STRUCT_MODIFIERS,
-									   NAMESPACE_STRUCT_MODIFIERS_LEN));
-		} else if (t->type == TokenType::TEMPLATE) {
-			dest.push_back(parseTemplate(NAMESPACE_TEMPLATE_MODIFIERS,
-										 NAMESPACE_TEMPLATE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::ENUM) {
-			dest.push_back(parseEnum(NAMESPACE_TEMPLATE_MODIFIERS,
-									 NAMESPACE_ENUM_MODIFIERS_LEN));
-		} else if (t->type == TokenType::NAMESPACE) {
-			dest.push_back(parseNamespace(NAMESPACE_NAMESPACE_MODIFIERS,
-										  NAMESPACE_NAMESPACE_MODIFIERS_LEN));
-		} else if (t->type == TokenType::FUN) {
-			dest.push_back(parseFunction(NAMESPACE_FUNCTION_MODIFIERS,
-										 NAMESPACE_FUNCTION_MODIFIERS_LEN,
-										 false));
-		} else {
-			throw AclException(ASP_CORE_UNKNOWN, t->meta,
-							   "Invalid namespace content");
-		}
-
 		skipNewlines(true);
 	}
 }
@@ -1895,20 +2012,26 @@ VariableBlock* Parser::parseVariableBlock(const SourceMeta& meta) {
 				t = lh(++current);
 		}
 
-		if (t->type == TokenType::GET && getBlock)
-			throw AclException(ASP_CORE_UNKNOWN, t->meta,
-							   "Duplicate get block");
-		else if (t->type == TokenType::GET)
+		if (t->type == TokenType::GET && getBlock) {
+			if (!isSpeculating())
+				diagnoser.diagnose(ec::DUPLICATE_VARIABLE_BLOCK, t->meta,
+								   t->data.length(), "Duplicate get block");
+			panic();
+		} else if (t->type == TokenType::GET)
 			getBlock = parseGetBlock();
-		else if (t->type == TokenType::SET && setBlock)
-			throw AclException(ASP_CORE_UNKNOWN, t->meta,
-							   "Duplicate set block");
-		else if (t->type == TokenType::SET)
+		else if (t->type == TokenType::SET && setBlock) {
+			if (!isSpeculating())
+				diagnoser.diagnose(ec::DUPLICATE_VARIABLE_BLOCK, t->meta,
+								   t->data.length(), "Duplicate set block");
+			panic();
+		} else if (t->type == TokenType::SET)
 			setBlock = parseSetBlock();
-		else if (t->type == TokenType::INIT && initBlock)
-			throw AclException(ASP_CORE_UNKNOWN, t->meta,
-							   "Duplicate init block");
-		else
+		else if (t->type == TokenType::INIT && initBlock) {
+			if (!isSpeculating())
+				diagnoser.diagnose(ec::DUPLICATE_VARIABLE_BLOCK, t->meta,
+								   t->data.length(), "Duplicate init block");
+			panic();
+		} else
 			initBlock = parseInitBlock();
 
 		skipNewlines(true);
@@ -2049,9 +2172,12 @@ Variable* Parser::parseTemplateVariable() {
 		}
 	}
 
-	if (!hasStaticMod)
-		throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta,
-						   "No static modifier found for template variable");
+	if (!hasStaticMod) {
+		if (!isSpeculating())
+			diagnoser.diagnose(ec::NONSTATIC_TEMPLATE_VARIABLE, lh(0)->meta,
+							   lh(0)->data.length());
+		panic();
+	}
 
 	matchAndDelete(TokenType::VAR);
 
@@ -2088,9 +2214,12 @@ Variable* Parser::parseTemplateConstant() {
 		}
 	}
 
-	if (!hasStaticMod)
-		throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta,
-						   "No static modifier found for template constant");
+	if (!hasStaticMod) {
+		if (!isSpeculating())
+			diagnoser.diagnose(ec::NONSTATIC_TEMPLATE_VARIABLE, lh(0)->meta,
+							   lh(0)->data.length());
+		panic();
+	}
 
 	matchAndDelete(TokenType::CONST);
 
@@ -2161,14 +2290,17 @@ Import* Parser::parseImport() {
 }
 
 Import* Parser::parseStandardImport() {
-	auto source = parseImportSource();
-	skipNewlines();
+	int numSkipped = 0;
+	auto source = parseImportSource(numSkipped);
+	if (numSkipped == 0) numSkipped = skipNewlines();
 	Token* alias = nullptr;
+	bool foundAs = false;
 	if (lh(0)->type == TokenType::AS) {
 		advanceAndDelete();
 		alias = match(TokenType::ID);
+		foundAs = true;
 	}
-	parseNewlineEquiv();
+	if (numSkipped == 0 && !foundAs) parseNewlineEquiv();
 	return new Import(source, alias, {});
 }
 
@@ -2195,14 +2327,15 @@ Import* Parser::parseFromImport() {
 	matchAndDelete(TokenType::FROM);
 	skipNewlines();
 
-	auto source = parseImportSource();
+	int numSkipped = 0;
+	auto source = parseImportSource(numSkipped);
 
-	parseNewlineEquiv();
+	if (numSkipped == 0) parseNewlineEquiv();
 
 	return new Import(source, nullptr, targets);
 }
 
-ImportSource* Parser::parseImportSource() {
+ImportSource* Parser::parseImportSource(int& numNewlinesSkipped) {
 	auto t = lh(0);
 	if (t->type == TokenType::STRING_LITERAL) {
 		advance();
@@ -2240,13 +2373,13 @@ ImportSource* Parser::parseImportSource() {
 
 	result = new ImportSource(t, result, relative);
 
-	skipNewlines();
+	numNewlinesSkipped = skipNewlines();
 	while (lh(0)->type == TokenType::DOT) {
 		advance();
 		skipNewlines();
 		auto child = match(TokenType::ID);
 		result = new ImportSource(child, result, relative);
-		skipNewlines();
+		numNewlinesSkipped = skipNewlines();
 	}
 
 	return result;
@@ -2268,14 +2401,8 @@ ImportTarget* Parser::parseImportTarget() {
 
 MetaDeclaration* Parser::parseSourceLock(const List<Node*>& globalContent) {
 	auto t = match(TokenType::META_SRCLOCK);
-	if (!globalContent.empty() && ctx.warnings[ASP_SOURCE_LOCK_FRONTING]) {
-		StringBuffer sb;
-		sb << "Source lock declarations should be placed at the beginning of "
-			  "the module (found one in module "
-		   << t->meta.file << " at " << t->meta.line << ":" << t->meta.col
-		   << ") (ASP " << ASP_SOURCE_LOCK_FRONTING << ")";
-		String s = sb.str();
-		log::warn(s);
+	if (!globalContent.empty() && ctx.warnings[ec::NONFRONTED_SOURCE_LOCK]) {
+		if (!isSpeculating()) diagnoser.diagnoseSourceLock(t);
 	}
 	return new MetaDeclaration(t);
 }
@@ -2376,6 +2503,7 @@ FunctionBlock* Parser::parseFunctionBlock() {
 }
 
 void Parser::parseFunctionBlockContent(List<Node*>& dest) {
+	lexer.setRecoverySentinels({'}', '\r', '\n', ';'});
 	skipNewlines(true);
 	while (lh(0)->type != TokenType::RBRACE) {
 		try {
@@ -2388,6 +2516,7 @@ void Parser::parseFunctionBlockContent(List<Node*>& dest) {
 }
 
 Node* Parser::parseSingleFunctionBlockContent() {
+	panicTerminator = PanicTerminator::STATEMENT_END;
 	try {
 		auto t = lh(0);
 		if (t->type == TokenType::IF) {
@@ -2451,15 +2580,28 @@ Node* Parser::parseSingleFunctionBlockContent() {
 		auto result = parseExpression();
 		parseNewlineEquiv();
 		return result;
-	} catch (AclException& e) {
-		String msg = e.what();
-		log::warn(msg);
-		panic(PanicTerminator::STATEMENT_END);
-
-		// This statement will never execute because panic() always throws.
-		// It's here to shut the compiler up.
-		return nullptr;
+	} catch (DuplicateSymbolException& e) {
+		if (!isSpeculating())
+			diagnoser.diagnoseDuplicateSymbol(e.original, e.duplicate);
+		panic();
+	} catch (DuplicateImportException& e) {
+		if (!isSpeculating())
+			diagnoser.diagnoseDuplicateImport(e.original, e.duplicate);
+	} catch (ParserPanicException& e) {
+		panicTerminator = PanicTerminator::STATEMENT_END;
+		panic();
+	} catch (AcceleException& e) {
+		if (!isSpeculating()) {
+			if (e.sourceMeta)
+				diagnoser.diagnose(e.ec, *e.sourceMeta, e.highlightLength,
+								   e.message);
+			else
+				diagnoser.diagnose(e.ec, e.message);
+		}
+		panic();
 	}
+
+	panic();
 }
 
 IfBlock* Parser::parseIfBlock() {
@@ -2619,8 +2761,10 @@ void Parser::parseSwitchBlockCases(List<SwitchCaseBlock*>& dest) {
 			popScope();
 			dest.push_back(new SwitchCaseBlock(t->meta, t, condition, block));
 		} else if (lh(0)->type == TokenType::DEFAULT && foundDefault) {
-			throw AclException(ASP_CORE_UNKNOWN, lh(0)->meta,
-							   "Duplicate default case in switch block");
+			if (!isSpeculating())
+				diagnoser.diagnose(ec::DUPLICATE_DEFAULT_CASE, lh(0)->meta,
+								   lh(0)->data.length());
+			panic();
 		} else {
 			auto t = match(TokenType::DEFAULT);
 			skipNewlines();
@@ -2883,10 +3027,10 @@ bool isFunctionOperator(TokenType type) {
 	return type == TokenType::TILDE || type == TokenType::EXCLAMATION_POINT ||
 		   type == TokenType::PERCENT || type == TokenType::CARET ||
 		   type == TokenType::AMPERSAND || type == TokenType::ASTERISK ||
-		   type == TokenType::MINUS || type == TokenType::MINUS ||
-		   type == TokenType::PLUS || type == TokenType::PIPE ||
-		   type == TokenType::LT || type == TokenType::GT ||
-		   type == TokenType::SLASH || type == TokenType::DOUBLE_EQUALS ||
+		   type == TokenType::MINUS || type == TokenType::PLUS ||
+		   type == TokenType::PIPE || type == TokenType::LT ||
+		   type == TokenType::GT || type == TokenType::SLASH ||
+		   type == TokenType::DOUBLE_EQUALS ||
 		   type == TokenType::EXCLAMATION_POINT_EQUALS ||
 		   type == TokenType::NOT || type == TokenType::AS ||
 		   type == TokenType::DOUBLE_ASTERISK ||

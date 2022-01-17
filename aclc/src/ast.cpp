@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 
-#include "exceptions.hpp"
+#include "diagnoser.hpp"
 #include "invariant_types.hpp"
 #include "json_util.hpp"
 #include "type_builder.hpp"
@@ -30,15 +30,15 @@ Scope::~Scope() {}
 void Scope::addSymbol(Symbol* symbol) {
 	// We only check types and namespaces here; we can't check functions or the
 	// like because addSymbol() doesn't consider overloaded functions
-	if ((dynamic_cast<Type*>(symbol) || dynamic_cast<Namespace*>(symbol)) &&
-		containsSymbol(symbol))
-		throw AclException(ASP_CORE_UNKNOWN, symbol->id->meta,
-						   "Duplicate symbol");
+	if (dynamic_cast<Type*>(symbol) || dynamic_cast<Namespace*>(symbol)) {
+		auto original = containsSymbol(symbol);
+		if (original) throw DuplicateSymbolException(original, symbol);
+	}
 
 	symbols.push_back(symbol);
 }
 
-bool Scope::containsSymbol(Symbol* symbol) {
+Symbol* Scope::containsSymbol(Symbol* symbol) {
 	bool isTypeEquiv =
 		dynamic_cast<Type*>(symbol) || dynamic_cast<Namespace*>(symbol);
 
@@ -48,10 +48,10 @@ bool Scope::containsSymbol(Symbol* symbol) {
 			  (dynamic_cast<Type*>(s) || dynamic_cast<Namespace*>(s))) ||
 			 (!isTypeEquiv && !dynamic_cast<Type*>(s) &&
 			  !dynamic_cast<Namespace*>(s))))
-			return true;
+			return s;
 	}
 
-	return false;
+	return nullptr;
 }
 
 namespace type {
@@ -160,11 +160,12 @@ bool genericAcceptsType(const GenericType* g, const TypeRef* t) {
 const TypeRef* getMinCommonType(const TypeRef* a, const TypeRef* b) {
 	const TypeRef* result = nullptr;
 	int score = getTypeMatchScore(&result, a, b, true);
-	if (score == -1)
+	if (score == -1) {
 		// This error should never occur; all types have at least a min common
 		// type of "Any"
-		throw AclException(ASP_CORE_UNKNOWN, a->sourceMeta,
-						   "Incompatible types");
+		throw AcceleException(ec::UNKNOWN, a->sourceMeta, 1,
+							  "Incompatible types");
+	}
 	return result;
 }
 
@@ -244,10 +245,8 @@ Node::Node(const SourceMeta& sourceMeta) : sourceMeta(sourceMeta) {}
 
 Node::~Node() {}
 
-Ast::Ast(GlobalScope* globalScope, const ModuleInfo& moduleInfo)
-	: globalScope(globalScope),
-	  stage(ResolutionStage::UNRESOLVED),
-	  moduleInfo(moduleInfo) {}
+Ast::Ast(GlobalScope* globalScope)
+	: globalScope(globalScope), stage(ResolutionStage::UNRESOLVED) {}
 
 Ast::~Ast() { delete globalScope; }
 
@@ -269,21 +268,16 @@ void GlobalScope::toJson(StringBuffer& dest) const {
 }
 
 void GlobalScope::addImport(Import* imp) {
-	if (!imp->alias)
-		throw AclException(ASP_CORE_UNKNOWN, imp->sourceMeta,
-						   "Import has no alias");
+	if (!imp->actualAlias) {
+		throw AcceleException(ec::UNKNOWN, imp->sourceMeta, 1,
+							  "Import has no alias");
+	}
 	for (const auto& other : imports) {
-		if (other->alias->data == imp->alias->data)
-			throw AclException(ASP_CORE_UNKNOWN, imp->sourceMeta,
-							   "Duplicate import");
+		if (other->actualAlias->data == imp->actualAlias->data) {
+			throw DuplicateImportException(other, imp);
+		}
 	}
 	imports.push_back(imp);
-}
-
-Import* GlobalScope::resolveImport(Token* id) {
-	for (auto& imp : imports)
-		if (imp->alias->data == id->data) return imp;
-	throw AclException(ASP_CORE_UNKNOWN, id->meta, "Unresolved import");
 }
 
 TypeRef::TypeRef(const SourceMeta& sourceMeta)
@@ -728,21 +722,22 @@ void FunctionBlock::toJson(StringBuffer& dest) const {
 void FunctionBlock::addSymbol(Symbol* symbol) {
 	Scope* currentScope = this;
 	do {
-		if (currentScope->containsSymbol(symbol))
-			throw AclException(ASP_CORE_UNKNOWN, symbol->id->meta,
-							   "Duplicate symbol");
+		auto original = currentScope->containsSymbol(symbol);
+		if (original) {
+			throw DuplicateSymbolException(original, symbol);
+		}
 		currentScope = currentScope->parentScope;
 	} while (currentScope && dynamic_cast<FunctionBlock*>(currentScope));
 
 	// Do one more for the top containing scope that isn't a function block
 	// (i.e. a function, a lambda expression, etc.)
-	if ((dynamic_cast<Function*>(currentScope) ||
-		 dynamic_cast<LambdaExpression*>(currentScope) ||
-		 dynamic_cast<Constructor*>(currentScope) ||
-		 dynamic_cast<SetBlock*>(currentScope)) &&
-		currentScope->containsSymbol(symbol))
-		throw AclException(ASP_CORE_UNKNOWN, symbol->id->meta,
-						   "Duplicate symbol");
+	if (dynamic_cast<Function*>(currentScope) ||
+		dynamic_cast<LambdaExpression*>(currentScope) ||
+		dynamic_cast<Constructor*>(currentScope) ||
+		dynamic_cast<SetBlock*>(currentScope)) {
+		auto original = currentScope->containsSymbol(symbol);
+		if (original) throw DuplicateSymbolException(original, symbol);
+	}
 
 	symbols.push_back(symbol);
 }
@@ -1521,8 +1516,12 @@ static Token* getImportAliasFromSource(ImportSource* src) {
 
 Import::Import(ImportSource* source, Token* alias,
 			   const List<ImportTarget*>& targets)
-	: Symbol(source->content), source(source), alias(alias), targets(targets) {
-	if (!alias) this->alias = getImportAliasFromSource(source);
+	: Symbol(source->content),
+	  source(source),
+	  alias(alias),
+	  targets(targets),
+	  actualAlias(alias) {
+	if (!alias) this->actualAlias = getImportAliasFromSource(source);
 }
 
 Import::~Import() {
@@ -1632,11 +1631,11 @@ static const Token* getVisibilityModifier(const List<Modifier*>& modifiers) {
 }
 
 TokenType getSymbolVisibility(const Scope* owningScope, const Symbol* symbol,
-							  bool modifiable, SourceMeta& destMeta) {
+							  bool modifiable, const Token** destToken) {
 	if (const Variable* n = dynamic_cast<const Variable*>(symbol)) {
 		auto vis = getVisibilityModifier(n->modifiers);
 		if (vis) {
-			destMeta = vis->meta;
+			*destToken = vis;
 			return vis->type;
 		}
 
@@ -1646,20 +1645,18 @@ TokenType getSymbolVisibility(const Scope* owningScope, const Symbol* symbol,
 				if (modifiable && vb->setBlock) {
 					vis = getVisibilityModifier(vb->setBlock->modifiers);
 					if (vis) {
-						destMeta = vis->meta;
+						*destToken = vis;
 						return vis->type;
 					}
 				} else if (vb->getBlock) {
 					vis = getVisibilityModifier(vb->getBlock->modifiers);
 					if (vis) {
-						destMeta = vis->meta;
+						*destToken = vis;
 						return vis->type;
 					}
 				}
 			}
 		}
-
-		destMeta = symbol->sourceMeta;
 
 		if (dynamic_cast<const Class*>(owningScope) ||
 			dynamic_cast<const Enum*>(owningScope)) {
@@ -1672,43 +1669,43 @@ TokenType getSymbolVisibility(const Scope* owningScope, const Symbol* symbol,
 	} else if (const Function* n = dynamic_cast<const Function*>(symbol)) {
 		auto vis = getVisibilityModifier(n->modifiers);
 		if (vis) {
-			destMeta = vis->meta;
+			*destToken = vis;
 			return vis->type;
 		}
 	} else if (const Class* n = dynamic_cast<const Class*>(symbol)) {
 		auto vis = getVisibilityModifier(n->modifiers);
 		if (vis) {
-			destMeta = vis->meta;
+			*destToken = vis;
 			return vis->type;
 		}
 	} else if (const Struct* n = dynamic_cast<const Struct*>(symbol)) {
 		auto vis = getVisibilityModifier(n->modifiers);
 		if (vis) {
-			destMeta = vis->meta;
+			*destToken = vis;
 			return vis->type;
 		}
 	} else if (const Template* n = dynamic_cast<const Template*>(symbol)) {
 		auto vis = getVisibilityModifier(n->modifiers);
 		if (vis) {
-			destMeta = vis->meta;
+			*destToken = vis;
 			return vis->type;
 		}
 	} else if (const Enum* n = dynamic_cast<const Enum*>(symbol)) {
 		auto vis = getVisibilityModifier(n->modifiers);
 		if (vis) {
-			destMeta = vis->meta;
+			*destToken = vis;
 			return vis->type;
 		}
 	} else if (const Namespace* n = dynamic_cast<const Namespace*>(symbol)) {
 		auto vis = getVisibilityModifier(n->modifiers);
 		if (vis) {
-			destMeta = vis->meta;
+			*destToken = vis;
 			return vis->type;
 		}
 	} else if (const Alias* n = dynamic_cast<const Alias*>(symbol)) {
 		auto vis = getVisibilityModifier(n->modifiers);
 		if (vis) {
-			destMeta = vis->meta;
+			*destToken = vis;
 			return vis->type;
 		}
 	} else if (const Constructor* n =
@@ -1716,22 +1713,20 @@ TokenType getSymbolVisibility(const Scope* owningScope, const Symbol* symbol,
 		auto vis = getVisibilityModifier(n->modifiers);
 		if (const Enum* parentEnum =
 				dynamic_cast<const Enum*>(n->parentScope)) {
-			if (vis && vis->type != TokenType::PRIVATE)
-				throw AclException(ASP_CORE_UNKNOWN, vis->meta,
-								   "All enum constructors must be private");
-			if (vis)
-				destMeta = vis->meta;
-			else
-				destMeta = symbol->sourceMeta;
+			if (vis && vis->type != TokenType::PRIVATE) {
+				throw AcceleException(ec::INVALID_MODIFIER, vis->meta,
+									  vis->data.length(),
+									  "All enum constructors must be private");
+			}
+			if (vis) *destToken = vis;
 			return TokenType::PRIVATE;
 		}
 		if (vis) {
-			destMeta = vis->meta;
+			*destToken = vis;
 			return vis->type;
 		}
 	}
 
-	destMeta = symbol->sourceMeta;
 	return TokenType::PUBLIC;
 }
 }  // namespace acl

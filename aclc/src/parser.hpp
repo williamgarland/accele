@@ -4,6 +4,7 @@
 
 #include "ast.hpp"
 #include "common.hpp"
+#include "diagnoser.hpp"
 #include "lexer.hpp"
 
 namespace acl {
@@ -23,6 +24,7 @@ class Parser {
 	bool panicking;
 	PanicTerminator panicTerminator;
 	bool didPanic;
+	Diagnoser diagnoser;
 
    private:
 	Token* lh(int pos);
@@ -43,7 +45,7 @@ class Parser {
 	Token* relex();
 
 	void popScope();
-	void panic(PanicTerminator terminator);
+	[[noreturn]] void panic();
 
    public:
 	Parser(CompilerContext& ctx, Lexer&& lexer);
@@ -83,7 +85,7 @@ class Parser {
 	Import* parseImport();
 	Import* parseStandardImport();
 	Import* parseFromImport();
-	ImportSource* parseImportSource();
+	ImportSource* parseImportSource(int& numNewlinesSkipped);
 	ImportTarget* parseImportTarget();
 	MetaDeclaration* parseSourceLock(const List<Node*>& globalContent);
 	Node* parseGlobalContent();
@@ -162,8 +164,9 @@ class Parser {
 	Only newline tokens (i.e. acl::TokenType::NL) will be parsed.
 	This function will parse as many sequential newline tokens as it can.
 	If the next token is not a newline, this function does nothing.
+	It returns the number of tokens that were skipped.
 	*/
-	void skipNewlines(bool includeSemicolons = false);
+	int skipNewlines(bool includeSemicolons = false);
 };
 
 bool isModifier(TokenType type);

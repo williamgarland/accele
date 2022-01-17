@@ -8,7 +8,7 @@
 namespace acl {
 class ImportHandler {
 	CompilerContext& ctx;
-	Ast* ast;
+	Module* mod;
 
 	void resolveImport(Import* i);
 	Ast* resolveImportSource(ImportSource* src);
@@ -18,9 +18,11 @@ class ImportHandler {
 					   const SourceMeta& meta);
 	void getPossibleBaseDirs(bool declaredRelative,
 							 List<std::filesystem::path>& dest);
+	void resolveImportTarget(Ast* searchTarget, ImportTarget* target,
+							 const List<ImportTarget*>& allTargets);
 
    public:
-	ImportHandler(CompilerContext& ctx, Ast* ast);
+	ImportHandler(CompilerContext& ctx, Module* mod);
 	void resolveImports();
 };
 }  // namespace acl

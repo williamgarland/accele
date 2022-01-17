@@ -49,7 +49,7 @@ struct Scope {
 	Scope(Scope* parentScope);
 	virtual ~Scope();
 	virtual void addSymbol(Symbol* symbol);
-	virtual bool containsSymbol(Symbol* symbol);
+	virtual Symbol* containsSymbol(Symbol* symbol);
 };
 
 bool hasCompatibleGenerics(const Type* type, const List<TypeRef*>& generics);
@@ -98,7 +98,6 @@ struct GlobalScope : public Symbol, public Scope {
 	virtual ~GlobalScope();
 	virtual void toJson(StringBuffer& dest) const override;
 	void addImport(Import* imp);
-	Import* resolveImport(Token* id);
 };
 
 struct Type;
@@ -623,6 +622,7 @@ struct EnumCase : public Symbol {
 struct ImportTarget : public Node {
 	Token* id;
 	TypeRef* declaredType;
+	List<Symbol*> referents;
 	ImportTarget(Token* id, TypeRef* declaredType);
 	virtual ~ImportTarget();
 	virtual void toJson(StringBuffer& dest) const override;
@@ -644,6 +644,7 @@ struct Import : public Symbol {
 	Token* alias;
 	List<ImportTarget*> targets;
 	Ast* referent;
+	Token* actualAlias;
 	Import(ImportSource* source, Token* alias,
 		   const List<ImportTarget*>& targets);
 	virtual ~Import();
@@ -667,13 +668,12 @@ ResolutionStage operator++(ResolutionStage& rs, int);
 struct Ast {
 	ResolutionStage stage;
 	GlobalScope* globalScope;
-	ModuleInfo moduleInfo;
-	Ast(GlobalScope* globalScope, const ModuleInfo& moduleInfo);
+	Ast(GlobalScope* globalScope);
 	~Ast();
 };
 
 bool isFunctionScope(const Scope* scope);
 bool isStaticSymbol(const Scope* owningScope, const Symbol* symbol);
 TokenType getSymbolVisibility(const Scope* owningScope, const Symbol* symbol,
-							  bool modifiable, SourceMeta& destMeta);
+							  bool modifiable, const Token** destToken);
 }  // namespace acl

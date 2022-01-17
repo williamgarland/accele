@@ -19,18 +19,17 @@ void AclException::updateMessage(const String& protocol, const SourceMeta& meta,
 								 const String& message) {
 	StringBuffer sb;
 	sb << "The following violates ASP " << protocol << ":\n";
-	sb << "In module ";
-	sb << meta.file << " at " << meta.line << ":" << meta.col << ": "
-	   << message;
+	if (meta.moduleInfo) {
+		sb << "In module ";
+		sb << meta.moduleInfo->name << " at " << meta.line << ":" << meta.col
+		   << ": ";
+	}
+	sb << message;
 	this->message = sb.str();
 }
 
-RecursiveResolutionException::RecursiveResolutionException() {}
-
-RecursiveResolutionException::~RecursiveResolutionException() {}
-
 LexerException::LexerException()
-	: AclException(ASP_CORE_UNKNOWN, SourceMeta{"(ERR)", -1, -1},
+	: AclException(ASP_CORE_UNKNOWN, SourceMeta{nullptr, -1, -1, -1},
 				   "Lexer exception") {}
 
 LexerException::LexerException(const SourceMeta& meta, const String& message)
@@ -48,11 +47,6 @@ ParserException::ParserException(const SourceMeta& meta, const String& message)
 	: AclException(ASP_CORE_UNKNOWN, meta, message) {}
 
 ParserException::~ParserException() {}
-
-ParserPanicException::ParserPanicException()
-	: ParserException(SourceMeta{"(ERR)", -1, -1}, "Parser panic exception") {}
-
-ParserPanicException::~ParserPanicException() {}
 
 TokenMismatchException::TokenMismatchException(TokenType expected,
 											   Token* received)
@@ -73,13 +67,4 @@ UnresolvedImportException::UnresolvedImportException(const String& protocol,
 
 UnresolvedImportException::~UnresolvedImportException() {}
 
-namespace log {
-void warn(const String& message) {
-	std::cout << "\u001b[33m[WARN]\u001b[0m: " << message << "\n";
-}
-
-void error(const String& message) {
-	std::cerr << "\u001b[31m[ERROR]\u001b[0m: " << message << "\n";
-}
-}  // namespace log
 }  // namespace acl

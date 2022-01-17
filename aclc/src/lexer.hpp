@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.hpp"
+#include "diagnoser.hpp"
 
 namespace acl {
 enum class TokenType {
@@ -157,6 +158,8 @@ enum class TokenType {
 	META_NOBUILTINS
 };
 
+String getStringForTokenType(TokenType type);
+
 struct Token {
 	TokenType type;
 	String data;
@@ -175,16 +178,20 @@ struct StringToken : public Token {
 };
 
 class Lexer {
-	String file;
+	const ModuleInfo& moduleInfo;
 	StringBuffer& buf;
 	int line;
 	int col;
+	List<int> recoverySentinels;
+	Diagnoser diagnoser;
+	FilePos currentPos;
 
    private:
 	SourceMeta getSourceMeta();
 	int get();
 	int advance();
 	void retract(char c);
+	[[noreturn]] void panic();
 
    private:
 	Token* lexSingleLineComment();
@@ -206,13 +213,16 @@ class Lexer {
 	Token* lexString(int delimiter);
 
    public:
-	Lexer(const String& file, StringBuffer& buf);
+	Lexer(const CompilerContext& ctx, const ModuleInfo& moduleInfo,
+		  StringBuffer& buf);
 	Token* nextToken();
 	bool hasNext() const;
-	const String& getModulePath() const;
+	const ModuleInfo& getModuleInfo() const;
+	void setRecoverySentinels(const List<int>& sentinels);
 };
 
 class Relexer {
+	const CompilerContext& ctx;
 	Token* originalToken;
 
 	void tryLex(const String& str, List<Token*>& dest);
@@ -220,7 +230,7 @@ class Relexer {
 	void relexHelper(int current, List<Token*>& dest);
 
    public:
-	Relexer(Token* originalToken);
+	Relexer(const CompilerContext& ctx, Token* originalToken);
 	void relex(List<Token*>& dest);
 };
 
@@ -234,8 +244,8 @@ bool isSymbolPart(int c);
 bool isNewlineChar(int c);
 
 TokenType getIdentifierType(const String& str);
-TokenType getSymbolType(const SourceMeta& sourceMeta, const String& str);
-TokenType getMetaType(const SourceMeta& sourceMeta, const String& str);
+TokenType getSymbolType(const String& str);
+TokenType getMetaType(const String& str);
 
 int getStringBufferLength(StringBuffer& buf);
 }  // namespace acl

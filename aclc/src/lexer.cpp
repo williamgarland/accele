@@ -1,6 +1,155 @@
 #include "lexer.hpp"
 
+#include "diagnoser.hpp"
 #include "exceptions.hpp"
+
+namespace {
+using namespace acl;
+Map<TokenType, String> TOKEN_TYPE_STRINGS = {
+	{TokenType::PUBLIC, "public"},
+	{TokenType::PRIVATE, "private"},
+	{TokenType::PROTECTED, "protected"},
+	{TokenType::INTERNAL, "internal"},
+	{TokenType::STATIC, "static"},
+	{TokenType::UNSAFE, "unsafe"},
+	{TokenType::ATOMIC, "atomic"},
+	{TokenType::REF, "ref"},
+	{TokenType::STRONG, "strong"},
+	{TokenType::WEAK, "weak"},
+	{TokenType::GREEDY, "greedy"},
+	{TokenType::FINAL, "final"},
+	{TokenType::OVERRIDE, "override"},
+	{TokenType::INFIX, "infix"},
+	{TokenType::PREFIX, "prefix"},
+	{TokenType::POSTFIX, "postfix"},
+	{TokenType::CLASS, "class"},
+	{TokenType::STRUCT, "struct"},
+	{TokenType::TEMPLATE, "template"},
+	{TokenType::ENUM, "enum"},
+	{TokenType::NAMESPACE, "namespace"},
+	{TokenType::VAR, "var"},
+	{TokenType::CONST, "const"},
+	{TokenType::FUN, "fun"},
+	{TokenType::SELF, "self"},
+	{TokenType::SUPER, "super"},
+	{TokenType::IF, "if"},
+	{TokenType::ELIF, "elif"},
+	{TokenType::ELSE, "else"},
+	{TokenType::FOR, "for"},
+	{TokenType::IN, "in"},
+	{TokenType::WHILE, "while"},
+	{TokenType::REPEAT, "repeat"},
+	{TokenType::SWITCH, "switch"},
+	{TokenType::CASE, "case"},
+	{TokenType::DEFAULT, "default"},
+	{TokenType::BREAK, "break"},
+	{TokenType::CONTINUE, "continue"},
+	{TokenType::RETURN, "return"},
+	{TokenType::THROW, "throw"},
+	{TokenType::THROWING, "throwing"},
+	{TokenType::NOEXCEPT, "noexcept"},
+	{TokenType::IMPORT, "import"},
+	{TokenType::FROM, "from"},
+	{TokenType::AS, "as"},
+	{TokenType::ASYNC, "async"},
+	{TokenType::AWAIT, "await"},
+	{TokenType::RELEASE, "release"},
+	{TokenType::GET, "get"},
+	{TokenType::SET, "set"},
+	{TokenType::INIT, "init"},
+	{TokenType::CONSTRUCT, "construct"},
+	{TokenType::DESTRUCT, "destruct"},
+	{TokenType::TRY, "try"},
+	{TokenType::CATCH, "catch"},
+	{TokenType::AND, "and"},
+	{TokenType::OR, "or"},
+	{TokenType::NOT, "not"},
+	{TokenType::AS_OPTIONAL, "as?"},
+	{TokenType::AS_UNWRAPPED, "as!"},
+	{TokenType::TRY_OPTIONAL, "try?"},
+	{TokenType::TRY_UNWRAPPED, "try!"},
+	{TokenType::ALIAS, "alias"},
+	{TokenType::EXTERN, "extern"},
+	{TokenType::FALL, "fall"},
+	{TokenType::GLOBAL, "global"},
+	{TokenType::IS, "is"},
+	{TokenType::USES, "uses"},
+	{TokenType::TILDE, "~"},
+	{TokenType::EXCLAMATION_POINT, "!"},
+	{TokenType::PERCENT, "%"},
+	{TokenType::CARET, "^"},
+	{TokenType::AMPERSAND, "&"},
+	{TokenType::ASTERISK, "*"},
+	{TokenType::LPAREN, "("},
+	{TokenType::RPAREN, ")"},
+	{TokenType::MINUS, "-"},
+	{TokenType::EQUALS, "="},
+	{TokenType::PLUS, "+"},
+	{TokenType::LBRACKET, "["},
+	{TokenType::RBRACKET, "]"},
+	{TokenType::LBRACE, "{"},
+	{TokenType::RBRACE, "}"},
+	{TokenType::PIPE, "|"},
+	{TokenType::COLON, ":"},
+	{TokenType::LT, "<"},
+	{TokenType::GT, ">"},
+	{TokenType::COMMA, ","},
+	{TokenType::DOT, "."},
+	{TokenType::SLASH, "/"},
+	{TokenType::QUESTION_MARK, "?"},
+	{TokenType::DOUBLE_EQUALS, "=="},
+	{TokenType::TRIPLE_EQUALS, "==="},
+	{TokenType::TILDE_EQUALS, "~="},
+	{TokenType::EXCLAMATION_POINT_EQUALS, "!="},
+	{TokenType::EXCLAMATION_POINT_DOUBLE_EQUALS, "!=="},
+	{TokenType::PERCENT_EQUALS, "%="},
+	{TokenType::CARET_EQUALS, "^="},
+	{TokenType::AMPERSAND_EQUALS, "&="},
+	{TokenType::MINUS_EQUALS, "-="},
+	{TokenType::PLUS_EQUALS, "+="},
+	{TokenType::PIPE_EQUALS, "|="},
+	{TokenType::LT_EQUALS, "<="},
+	{TokenType::GT_EQUALS, ">="},
+	{TokenType::SLASH_EQUALS, "/="},
+	{TokenType::DOUBLE_AMPERSAND, "&&"},
+	{TokenType::DOUBLE_PIPE, "||"},
+	{TokenType::DOUBLE_ASTERISK, "**"},
+	{TokenType::DOUBLE_MINUS, "--"},
+	{TokenType::DOUBLE_PLUS, "++"},
+	{TokenType::DOUBLE_LT, "<<"},
+	{TokenType::DOUBLE_GT, ">>"},
+	{TokenType::DOUBLE_DOT, ".."},
+	{TokenType::TRIPLE_DOT, "..."},
+	{TokenType::DOUBLE_QUESTION_MARK, "??"},
+	{TokenType::QUESTION_MARK_DOT, "?."},
+	{TokenType::MINUS_ARROW, "->"},
+	{TokenType::EQUALS_ARROW, "=>"},
+	{TokenType::SEMICOLON, ";"},
+	{TokenType::COMPARE, "<=>"},
+	{TokenType::DOUBLE_ASTERISK_EQUALS, "**="},
+	{TokenType::DOUBLE_LT_EQUALS, "<<="},
+	{TokenType::DOUBLE_GT_EQUALS, ">>="},
+	{TokenType::META_NORETURN, "@noreturn"},
+	{TokenType::META_STACKALLOC, "@stackalloc"},
+	{TokenType::META_SRCLOCK, "@srclock"},
+	{TokenType::META_LAXTHROW, "@laxthrow"},
+	{TokenType::META_EXTERNALINIT, "@externalinit"},
+	{TokenType::META_DEPRECATED, "@deprecated"},
+	{TokenType::META_ENABLEWARNING, "@enablewarning"},
+	{TokenType::META_DISABLEWARNING, "@disablewarning"},
+	{TokenType::META_NOBUILTINS, "@nobuiltins"},
+	{TokenType::ID, "identifier"},
+	{TokenType::BOOLEAN_LITERAL, "a boolean literal"},
+	{TokenType::INTEGER_LITERAL, "an integer literal"},
+	{TokenType::HEX_LITERAL, "a hexadecimal literal"},
+	{TokenType::OCTAL_LITERAL, "an octal literal"},
+	{TokenType::BINARY_LITERAL, "a binary literal"},
+	{TokenType::FLOAT_LITERAL, "a floating-point literal"},
+	{TokenType::STRING_LITERAL, "a string literal"},
+	{TokenType::NIL_LITERAL, "nil"},
+	{TokenType::EOF_TOKEN, "end of file"},
+	{TokenType::NL, "end of line"}};
+}  // namespace
 
 namespace acl {
 Token::Token(TokenType type, const String& data, const SourceMeta& meta)
@@ -13,21 +162,42 @@ StringToken::StringToken(TokenType type, const String& data,
 	: Token(type, data, meta), interpolations(interpolations) {}
 StringToken::~StringToken() {}
 
-Lexer::Lexer(const String& file, StringBuffer& buf)
-	: file(file), buf(buf), line(1), col(1) {}
+Lexer::Lexer(const CompilerContext& ctx, const ModuleInfo& moduleInfo,
+			 StringBuffer& buf)
+	: moduleInfo(moduleInfo),
+	  buf(buf),
+	  line(1),
+	  col(1),
+	  diagnoser(ctx, std::cout),
+	  currentPos(0) {}
 
-SourceMeta Lexer::getSourceMeta() { return {file, line, col}; }
+SourceMeta Lexer::getSourceMeta() {
+	return {&moduleInfo, currentPos, line, col};
+}
 
 int Lexer::get() { return buf.peek(); }
 
 int Lexer::advance() {
 	col++;
+	currentPos++;
 	return buf.get();
 }
 
 void Lexer::retract(char c) {
 	col--;
+	currentPos--;
 	buf.putback(c);
+}
+
+[[noreturn]] void Lexer::panic() {
+	while (hasNext() && !listContains(recoverySentinels, get())) {
+		if (isNewlineChar(get()))
+			delete lexNewline();
+		else
+			advance();
+	}
+
+	throw LexerPanicException();
 }
 
 Token* Lexer::lexSingleLineComment() {
@@ -37,18 +207,25 @@ Token* Lexer::lexSingleLineComment() {
 
 Token* Lexer::lexMultiLineComment() {
 	auto sourceMeta = getSourceMeta();
+	sourceMeta.col--;  // Subtract the column by 1 because we want the column to
+					   // start at the '/', not the '*'
 	advance();	// The initial '/' has already been read, but we still need to
 				// read the initial '*' that proceeds it
 	int c;
 	while ((c = get()) != EOF) {
+		if (isNewlineChar(c)) {
+			line++;
+			col = 0;
+		}
 		advance();
 		if (c == '*' && get() == '/') {
 			advance();
 			return nextToken();
 		}
 	}
-	throw AclException(ASP_COMMENT_BLOCKS, sourceMeta,
-					   "Invalid termination of comment block");
+
+	diagnoser.diagnoseMultiLineCommentEnd(sourceMeta);
+	panic();
 }
 
 Token* Lexer::lexNewline() {
@@ -69,10 +246,10 @@ void Lexer::lexExponent(StringBuffer& sb) {
 	if (get() == '+' || get() == '-') sb << (char)advance();
 
 	int c = get();
-	if (!isdigit(c))
-		throw AclException(
-			ASP_FLOATING_POINT_LITERALS, getSourceMeta(),
-			"Expected one or more digits following the exponent");
+	if (!isdigit(c)) {
+		diagnoser.diagnoseFloatLiteral(getSourceMeta());
+		panic();
+	}
 	sb << (char)advance();
 
 	while (isdigit(get())) sb << (char)advance();
@@ -82,9 +259,10 @@ Token* Lexer::lexHexLiteral(const SourceMeta& sourceMeta) {
 	StringBuffer sb;
 
 	int c = get();
-	if (!isxdigit(c))
-		throw AclException(ASP_INTEGER_LITERALS, getSourceMeta(),
-						   "Expected one or more hexadecimal digits");
+	if (!isxdigit(c)) {
+		diagnoser.diagnoseHexLiteral(getSourceMeta());
+		panic();
+	}
 	sb << (char)advance();
 
 	while (isxdigit(get())) sb << (char)advance();
@@ -97,9 +275,10 @@ Token* Lexer::lexOctalLiteral(const SourceMeta& sourceMeta) {
 	StringBuffer sb;
 
 	int c = get();
-	if (!isOctalDigit(c))
-		throw AclException(ASP_INTEGER_LITERALS, getSourceMeta(),
-						   "Expected one or more octal digits");
+	if (!isOctalDigit(c)) {
+		diagnoser.diagnoseOctalLiteral(getSourceMeta());
+		panic();
+	}
 	sb << (char)advance();
 
 	while (isOctalDigit(get())) sb << (char)advance();
@@ -112,9 +291,10 @@ Token* Lexer::lexBinaryLiteral(const SourceMeta& sourceMeta) {
 	StringBuffer sb;
 
 	int c = get();
-	if (!isBinaryDigit(c))
-		throw AclException(ASP_INTEGER_LITERALS, getSourceMeta(),
-						   "Expected one or more binary digits");
+	if (!isBinaryDigit(c)) {
+		diagnoser.diagnoseBinaryLiteral(getSourceMeta());
+		panic();
+	}
 	sb << (char)advance();
 
 	while (isBinaryDigit(get())) sb << (char)advance();
@@ -216,20 +396,20 @@ Token* Lexer::lexSymbol() {
 
 	String content = sb.str();
 	TokenType type = TokenType::EOF_TOKEN;
-	AclException err;
+	int originalLength = content.length();
 	while (true) {
-		try {
-			type = getSymbolType(sourceMeta, content);
-			break;
-		} catch (AclException& e) {
-			err = e;
-			if (content.length() == 1) break;
-			char c = content[content.length() - 1];
-			content.erase(content.length() - 1);
-			retract(c);
-		}
+		type = getSymbolType(content);
+		if (type != TokenType::EOF_TOKEN) break;
+		if (content.length() == 1) break;
+		char c = content[content.length() - 1];
+		content.erase(content.length() - 1);
+		retract(c);
 	}
-	if (type == TokenType::EOF_TOKEN) throw err;
+	if (type == TokenType::EOF_TOKEN) {
+		diagnoser.diagnose(ec::INVALID_LEXICAL_SYMBOL, sourceMeta,
+						   originalLength);
+		panic();
+	}
 
 	return new Token{type, content, sourceMeta};
 }
@@ -273,15 +453,25 @@ Token* Lexer::lexMeta() {
 
 	String content = sb.str();
 
-	return new Token{getMetaType(sourceMeta, content), content, sourceMeta};
+	auto type = getMetaType(content);
+
+	if (type == TokenType::EOF_TOKEN) {
+		diagnoser.diagnose(ec::INVALID_TAG, sourceMeta,
+						   content.length() + 1);  // +1 for the initial '@'
+		panic();
+	}
+
+	return new Token{type, content, sourceMeta};
 }
 
 void Lexer::lexUnicodeEscapeSequence(StringBuffer& sb, int n) {
 	for (int i = 0; i < n; i++) {
 		int c = get();
-		if (!isxdigit(c))
-			throw AclException(ASP_STRING_ESCAPES, getSourceMeta(),
-							   "Invalid Unicode escape sequence");
+		if (!isxdigit(c)) {
+			diagnoser.diagnose(ec::INVALID_UNICODE_ESCAPE_SEQUENCE,
+							   getSourceMeta(), 1);
+			panic();
+		}
 		sb << (char)advance();
 	}
 }
@@ -322,8 +512,8 @@ void Lexer::lexInterpolationEscapeSequence(int pos,
 		sb << (char)advance();
 	}
 
-	throw AclException(ASP_STRING_ESCAPES, getSourceMeta(),
-					   "Invalid interpolation escape sequence");
+	diagnoser.diagnose(ec::INVALID_INTERPOLATION, getSourceMeta(), 1);
+	panic();
 }
 
 void Lexer::lexEscapeSequence(StringBuffer& sb,
@@ -346,8 +536,8 @@ void Lexer::lexEscapeSequence(StringBuffer& sb,
 			getStringBufferLength(sb);	// Position of interpolation insertion
 		lexInterpolationEscapeSequence(pos, interpolations);
 	} else {
-		throw AclException(ASP_STRING_ESCAPES, getSourceMeta(),
-						   "Invalid string escape");
+		diagnoser.diagnose(ec::INVALID_ESCAPE_SEQUENCE, getSourceMeta(), 1);
+		panic();
 	}
 }
 
@@ -357,13 +547,17 @@ Token* Lexer::lexString(int delimiter) {
 	StringBuffer sb;
 	int c;
 	Map<int, String> interpolations;
-	while ((c = get()) != delimiter) {
+	while ((c = get()) != delimiter && c != EOF) {
 		if (c == '\\') {
 			lexEscapeSequence(sb, interpolations);
 		} else {
 			sb << (char)c;
 			advance();
 		}
+	}
+	if (c == EOF) {
+		diagnoser.diagnose(ec::INVALID_STRING_LITERAL_END, sourceMeta, 1);
+		panic();
 	}
 	advance();
 	String content = sb.str();
@@ -384,12 +578,20 @@ Token* Lexer::nextToken() {
 	if (c == '\'' || c == '"') return lexString(c);
 	if (c == '@') return lexMeta();
 	if (isNewlineChar(c)) return lexNewline();
-	throw AclException(ASP_SYMBOLS, getSourceMeta(), "Invalid input");
+
+	diagnoser.diagnose(ec::INVALID_INPUT, getSourceMeta(), 1);
+	panic();
 }
 
 bool Lexer::hasNext() const { return buf.rdbuf()->in_avail() > 0; }
 
-const String& Lexer::getModulePath() const { return file; }
+const ModuleInfo& Lexer::getModuleInfo() const { return moduleInfo; }
+
+void Lexer::setRecoverySentinels(const List<int>& sentinels) {
+	recoverySentinels.clear();
+	recoverySentinels.insert(recoverySentinels.end(), sentinels.begin(),
+							 sentinels.end());
+}
 }  // namespace acl
 
 namespace acl {
@@ -483,11 +685,13 @@ TokenType getIdentifierType(const String& str) {
 	if (str == "global") return TokenType::GLOBAL;
 	if (str == "is") return TokenType::IS;
 	if (str == "uses") return TokenType::USES;
+	if (str == "true" || str == "false") return TokenType::BOOLEAN_LITERAL;
+	if (str == "nil") return TokenType::NIL_LITERAL;
 
 	return TokenType::ID;
 }
 
-TokenType getSymbolType(const SourceMeta& sourceMeta, const String& str) {
+TokenType getSymbolType(const String& str) {
 	if (str == "~") return TokenType::TILDE;
 	if (str == "!") return TokenType::EXCLAMATION_POINT;
 	if (str == "%") return TokenType::PERCENT;
@@ -545,10 +749,10 @@ TokenType getSymbolType(const SourceMeta& sourceMeta, const String& str) {
 	if (str == "<<=") return TokenType::DOUBLE_LT_EQUALS;
 	if (str == ">>=") return TokenType::DOUBLE_GT_EQUALS;
 
-	throw AclException(ASP_SYMBOLS, sourceMeta, "Invalid symbol");
+	return TokenType::EOF_TOKEN;
 }
 
-TokenType getMetaType(const SourceMeta& sourceMeta, const String& str) {
+TokenType getMetaType(const String& str) {
 	if (str == "@noreturn") return TokenType::META_NORETURN;
 	if (str == "@stackalloc") return TokenType::META_STACKALLOC;
 	if (str == "@srclock") return TokenType::META_SRCLOCK;
@@ -558,7 +762,8 @@ TokenType getMetaType(const SourceMeta& sourceMeta, const String& str) {
 	if (str == "@enablewarning") return TokenType::META_ENABLEWARNING;
 	if (str == "@disablewarning") return TokenType::META_DISABLEWARNING;
 	if (str == "@nobuiltins") return TokenType::META_NOBUILTINS;
-	throw AclException(ASP_META_KEYWORDS, sourceMeta, "Invalid meta keyword");
+
+	return TokenType::EOF_TOKEN;
 }
 
 int getStringBufferLength(StringBuffer& buf) {
@@ -568,12 +773,13 @@ int getStringBufferLength(StringBuffer& buf) {
 	return len;
 }
 
-Relexer::Relexer(Token* originalToken) : originalToken(originalToken) {}
+Relexer::Relexer(const CompilerContext& ctx, Token* originalToken)
+	: ctx(ctx), originalToken(originalToken) {}
 
 void Relexer::tryLex(const String& str, List<Token*>& dest) {
 	StringBuffer buf;
 	buf << str;
-	Lexer lexer = Lexer("<internal>", buf);
+	Lexer lexer = Lexer(ctx, *originalToken->meta.moduleInfo, buf);
 	while (lexer.hasNext()) {
 		try {
 			dest.push_back(lexer.nextToken());
@@ -585,7 +791,7 @@ void Relexer::tryLex(const String& str, List<Token*>& dest) {
 }
 
 Token* Relexer::formatToken(Token* t, int start) {
-	t->meta.file = originalToken->meta.file;
+	t->meta.moduleInfo = originalToken->meta.moduleInfo;
 	t->meta.line = originalToken->meta.line;
 	t->meta.col = originalToken->meta.col + start;
 	return t;
@@ -610,4 +816,8 @@ void Relexer::relexHelper(int current, List<Token*>& dest) {
 }
 
 void Relexer::relex(List<Token*>& dest) { relexHelper(0, dest); }
+
+String getStringForTokenType(TokenType type) {
+	return TOKEN_TYPE_STRINGS.at(type);
+}
 }  // namespace acl

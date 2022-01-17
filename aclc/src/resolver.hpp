@@ -21,10 +21,11 @@ struct SearchCriteria {
 class Resolver {
 	std::deque<Scope*> scopes;
 	std::deque<Scope*> lexicalScopes;
-	Ast* ast;
+	Module* mod;
 	CompilerContext& ctx;
 	ResolutionStage maxStage;
 	List<Symbol*> symbolStack;
+	Diagnoser diagnoser;
 
 	void pushSymbol(Symbol* symbol);
 	void popSymbol();
@@ -36,12 +37,13 @@ class Resolver {
 	Scope* getLexicalScope();
 
    public:
-	Resolver(CompilerContext& ctx, Ast* ast);
-	Resolver(CompilerContext& ctx, Ast* ast, ResolutionStage maxStage);
+	Resolver(CompilerContext& ctx, Module* mod);
+	Resolver(CompilerContext& ctx, Module* mod, ResolutionStage maxStage);
 	void resolve();
 
    private:
 	// ----- General ----- //
+	void resolveGlobalScope();
 	void resolveNonLocalContent(Node* n);
 	void resolveClass(Class* n);
 	void resolveStruct(Struct* n);

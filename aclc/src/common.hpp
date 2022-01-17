@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -16,25 +17,37 @@ using List = std::vector<T>;
 template <typename K, typename V>
 using Map = std::unordered_map<K, V>;
 
-struct SourceMeta {
-	String file;
-	int line;
-	int col;
-};
-
 struct ModuleInfo {
 	String dir;
 	String path;
 	String name;
 };
 
+using FilePos = std::intmax_t;
+
+struct SourceMeta {
+	const ModuleInfo* moduleInfo;
+	FilePos pos;
+	int line;
+	int col;
+};
+
 struct Ast;
+
+struct Module {
+	ModuleInfo moduleInfo;
+	Ast* ast;
+	List<String> source;
+
+	Module(const ModuleInfo& moduleInfo, Ast* ast, const List<String>& source);
+	~Module();
+};
 
 // Contains common flags and features to be used across all parts of the
 // compilation process.
 struct CompilerContext {
-	Map<String, bool> warnings;
-	List<Ast*> modules;
+	Map<int, bool> warnings;
+	List<Module*> modules;
 	List<std::filesystem::path> additionalImportDirs;
 	std::filesystem::path globalImportDir;
 	CompilerContext();

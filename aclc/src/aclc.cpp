@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "exceptions.hpp"
+#include "invariant_types.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "resolver.hpp"
@@ -363,7 +364,7 @@ void parseArgs(int argc, char* argv[]);
 void compile();
 void compileModule(acl::CompilerContext& ctx,
 				   const std::filesystem::path& path);
-void dumpAst(const acl::Ast* ast, const std::filesystem::path& destDir);
+void dumpAst(const acl::Module& m, const std::filesystem::path& destDir);
 void setDefaultGlobalImportDir();
 
 struct AclcOptions {
@@ -395,7 +396,7 @@ int main(int argc, char* argv[]) {
 	try {
 		parseArgs(argc, argv);
 	} catch (ArgumentException& e) {
-		acl::log::error(e.what());
+		acl::log::error(std::cout, e.what());
 		return 1;
 	}
 
@@ -497,7 +498,7 @@ void parseArgs(int argc, char* argv[]) {
 
 	if (runCompiler) {
 		if (compilerOptions.inputModules.empty()) {
-			acl::log::error("No input modules provided");
+			acl::log::error(std::cout, "No input modules provided");
 			displayUsage();
 			exit(1);
 		}
@@ -512,6 +513,8 @@ void parseArgs(int argc, char* argv[]) {
 
 void compile() {
 	using namespace acl;
+	bt::initInvariantTypes();
+
 	CompilerContext ctx;
 
 	for (auto& p : compilerOptions.additionalImportPaths)
@@ -532,6 +535,21 @@ void compile() {
 			compileModule(ctx, p);
 		}
 	}
+
+	for (auto& m : ctx.modules) delete m;
+}
+
+static acl::String getModuleDir(const std::filesystem::path& path) {
+	return path.parent_path();
+}
+
+static acl::String getModuleName(const std::filesystem::path& path) {
+	return path.stem();
+}
+
+static acl::ModuleInfo getModuleInfo(const std::filesystem::path& path) {
+	auto p = std::filesystem::absolute(path);
+	return {getModuleDir(p), p, getModuleName(p)};
 }
 
 void compileModule(acl::CompilerContext& ctx,
@@ -544,19 +562,48 @@ void compileModule(acl::CompilerContext& ctx,
 	sb << ifs.rdbuf();
 	ifs.close();
 
+	acl::String str = sb.str();
+
+	acl::StringBuffer lexerBuf;
+	lexerBuf << str;
+
 	// TODO: A .accele file and a .acldef file should be parsed and resolved
 	// differently. Also, .acldef files cannot be translated to C++ source or
 	// OBJ files. They can only be used to reference a library.
 
-	acl::Parser parser = acl::Parser(ctx, acl::Lexer(path.string(), sb));
+	auto moduleInfo = getModuleInfo(path);
+
+	acl::StringBuffer linesBuf;
+	linesBuf << str;
+
+	acl::List<acl::String> lines;
+	while (linesBuf) {
+		acl::String line;
+		std::getline(linesBuf, line);
+		lines.push_back(line);
+	}
+
+	auto m = new acl::Module{moduleInfo, nullptr, lines};
+
+	ctx.modules.push_back(m);
+
+	acl::Parser parser =
+		acl::Parser(ctx, acl::Lexer(ctx, m->moduleInfo, lexerBuf));
 	auto ast = parser.parse();
 
-	ctx.modules.push_back(ast);
+	m->ast = ast;
+
+	acl::Resolver resolver = acl::Resolver(ctx, m);
+	try {
+		resolver.resolve();
+	} catch (acl::AcceleException& e) {
+		exit(1);
+	}
 
 	// TODO: Handle the rest of compilation here
 
 	if (compilerOptions.dumpAst) {
-		dumpAst(ast, compilerOptions.astDest);
+		dumpAst(*m, compilerOptions.astDest);
 	}
 }
 
@@ -565,6 +612,7 @@ void setDefaultGlobalImportDir() {
 
 	if (!acceleHome) {
 		acl::log::warn(
+			std::cout,
 			"No \"ACCELE_HOME\" environment variable found. This may cause "
 			"problems for global imports.");
 		return;
@@ -673,19 +721,19 @@ void addInputFile(const acl::String& file) {
 	compilerOptions.inputModules.push_back(p);
 }
 
-void dumpAst(const acl::Ast* ast, const std::filesystem::path& destDir) {
-	auto destFile = destDir / (ast->moduleInfo.name + ".ast.json");
+void dumpAst(const acl::Module& m, const std::filesystem::path& destDir) {
+	auto destFile = destDir / (m.moduleInfo.name + ".ast.json");
 	std::ofstream ofs(destFile);
 
 	if (!ofs) {
 		acl::StringBuffer sb;
 		sb << "Failed to write AST for destination file \"" << destFile.string()
 		   << "\"";
-		acl::log::error(sb.str());
+		acl::log::error(std::cout, sb.str());
 	}
 
 	acl::StringBuffer sb;
-	ast->globalScope->toJson(sb);
+	m.ast->globalScope->toJson(sb);
 	auto str = sb.str();
 	ofs << str;
 }

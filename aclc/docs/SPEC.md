@@ -14,7 +14,7 @@ Multiple features should not be included within a single protocol.
 
 ## Protocols
 ### 1.0.1 - Integer literals
-Integer literals can be written in four different bases: base-16, base-10, base-8, and base-2. Base-10 is the default, written as a sequence of one or more of the digits 0-9. Base-16 is written with a preceeding `0x` or `0X`, followed by one or more hexadecimal digits. Base-8 is written with a preceeding `0o` or `0O`, followed by one or more octal digits. Base-2 is written with a preceeding `0b` or `0B`, followed by one or more binary digits. Unless otherwise casted, all integer literals are assumed to be the `Int` type.
+Integer literals can be written in four different bases: base-16, base-10, base-8, and base-2. Base-10 is the default, written as a sequence of one or more of the digits 0-9. Base-16 is written with a preceeding `0x` or `0X`, followed by one or more hexadecimal digits. Base-8 is written with a preceeding `0o` or `0O`, followed by one or more octal digits. Base-2 is written with a preceeding `0b` or `0B`, followed by one or more binary digits. Unless otherwise cast, all integer literals are assumed to be the `Int` type.
 
 #### Grammar
 | Type | Grammar |

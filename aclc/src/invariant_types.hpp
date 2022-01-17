@@ -17,6 +17,8 @@ class InvariantType : public Type, public Scope {
    public:
 	InvariantType(const String& id,
 				  std::initializer_list<TypeRef*> parentTypes);
+	InvariantType(const String& id,
+				  std::initializer_list<GenericType*> generics);
 	virtual ~InvariantType();
 	virtual void toJson(StringBuffer& dest) const override;
 };
@@ -46,8 +48,15 @@ extern const InvariantType* FUNCTION;
 extern const InvariantType* OPTIONAL;
 extern const InvariantType* UNWRAPPED_OPTIONAL;
 extern const InvariantType* POINTER;
+extern const InvariantType* ITERATOR;
+extern const InvariantType* RANGE;
+extern const InvariantType* ITERABLE;
 
 bool isInvariantType(const String& id);
 const InvariantType* resolveInvariantType(const Token* id);
+
+// Call this once at startup to initialize the invariant type members and
+// properties
+void initInvariantTypes();
 }  // namespace bt
 }  // namespace acl
